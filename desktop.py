@@ -22,6 +22,8 @@ def serve(port, no_updates=False):
     import published_tags
     published_tags.apply(ROOT/'data/archive.sqlite3')
     published_tags.initialize_catalog(ROOT/'data/archive.sqlite3')
+    import shareholder_seed
+    shareholder_seed.apply(ROOT/'data/archive.sqlite3')
     session_file = ROOT/'data/desktop-session.json'
     session = {'pid': os.getpid(), 'port': port, 'project_key': PROJECT_KEY,
                'instance_id': secrets.token_hex(16), 'token': secrets.token_hex(32), 'state': 'starting'}
@@ -84,6 +86,7 @@ def serve(port, no_updates=False):
         app.suspension.Refresher = OfflineRefresher
         app.live_update.Refresher = OfflineRefresher
         app.live_pool.Refresher = OfflineRefresher
+        app.shareholders.Refresher = OfflineRefresher
     sys.argv = [str(ROOT/'app.py'), '--port', str(port), '--db', str(ROOT/'data/archive.sqlite3')]
     session['state'] = 'running'
     session_file.write_text(json.dumps(session), encoding='utf-8')

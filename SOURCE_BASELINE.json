@@ -1,15 +1,15 @@
 {
   "project": "lianban-archive-desktop",
-  "source_commit": "dfde734d8103a392dfb9232b04e412cedc8e2046",
-  "source_date": "2026-10-28",
+  "source_commit": "f6fc674734f96c59fa7fe96c38aa6ac20856b6bc",
+  "source_date": "2026-10-29",
   "identity_sha256": {
-    "app.py": "f25a37d3f740ce28d4dfdbad99331c9d85a0aeeb0649c51de786553cc5d1c6c6",
+    "app.py": "18a65c5377403a481a4d660012109d117e3fadd620c10355e1d527a405a299ce",
     "backup_db.py": "541b45b764d721fbaed7a2ad6ca39d7936ef7c115d33f154967c1e054c71a914",
     "collect_intraday.py": "ad056aba69a24f2814ea1b6d859b7b5255c92aa546bb8c12802bd8b1aece4f19",
     "concept_tags.py": "775fd3031faacd1bcea2c54df672ac8420a8a161384524bef43310b9ec5f4179",
-    "database.py": "51986cd14a1e69b38bcb2e4245e9d6326e8e6e508bd999e25af065bac3ba2dae",
+    "database.py": "4b9fd4500175c752916df2c10210deb54df346f45a06fb5b9aca5927caf77f2d",
     "import_manual.py": "f7ad15f1d39c0c2c6adff769a987290594c5f9348c770aa61b571e6f75635c77",
-    "industry.py": "a7d73940410b560cff402f7c134fab65ca114ca13ac177798053127255695fd9",
+    "industry.py": "f0aa0e9b3a927a3a1f5c02695c0d58c68ae51888677ac15c3693ffa40bd57bda",
     "intraday.py": "7f979394801d999bcc3fd38376329acfc88d9fe15afbe194ed983761f02f40ef",
     "intraday_sources.py": "384a7fb2d693cb4e198e996afb294b4c6e381ad5a39e2f8323d15b8233952559",
     "intraday_timeline.py": "fd9d43c8574c1ae283d0519b5c1e75ff283472b98d169cdd25341efd9424f5b2",
@@ -19,16 +19,17 @@
     "provinces.py": "e3fc2108bd9ddea86f3c081a40cfc524ed58b1cdfd07a308d5e857348757b02c",
     "registration.py": "83925eb8edc0a3abdc63ece99290df59df3f56a31d8e1a95516d9f71f87f73f0",
     "relationships.py": "7b81a36f2ebb5a681f02a8a95fed483865f971a3d957bf26b1119863d4bca137",
+    "shareholders.py": "4c39c7d618feb05da08c4ee27bb597b96ec4106586d21ba81639022d34eb12e9",
     "suspension.py": "5b90dcf49f3f33ca0b4347f45fcb521a6571908abd3ff28c4e6dae8114215c12",
     "sync_data.py": "580744d67624b4f0e129c60d448a02739ce68ab4bf5488f6ef0f0964ca8f9f5d",
     "tag_management.py": "9bce111a1721f54475c2698836540fe253622e64f2db26f4da46c374efa696d5",
-    "web/app.js": "52925a7c79ea4d81480392686e56870b03addc3686e6c2bec124d195992ddd81",
+    "web/app.js": "8228b50167847759a0236602895187003ba83196c3e60ac6712170d05697a8f0",
     "web/fonts/NotoSansSC-VF.woff2": "7fabc1ef45ba1bd4d8dea904f51f408cfb515cf56c5ad813836df34c01171159",
     "web/fonts/OFL.txt": "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9",
     "web/fonts/SOURCE.md": "59c7342b9060486786ac37f018f9f20d7f6cbf6763aaad1fe439086c02f7503c",
     "web/images/title-companions.jpg": "c69048e24698593955967ee22f2982235ee2b0fec1df9c67940f27a34f79dc67",
-    "web/index.html": "7cfe0b36996932435043b7ce783a04229c4cd0d767bc6be186d0708661998188",
-    "web/styles.css": "af7fcc545913d9e6a41b7ea5c1294c1b5c173479b5f92238f38848493b511726"
+    "web/index.html": "0aefc4e99d229936bfd852f5ce2b9b1f29fa0b369045274241c23825c8f00062",
+    "web/styles.css": "df2d54c061d35113f5661fb4fa1081c488a3583dda3fa3b3f7718da2b786ba75"
   },
   "excluded_personal_tables": [
     "stock_tag_overrides",
@@ -38,6 +39,6 @@
     "stock_note_entries",
     "stock_note_options"
   ],
-  "description": "Application modules and UI match the owner-authorized 2026-10-28 local test source. Published tag defaults are installed separately and merged with existing personal labels; notes are never exported.",
+  "description": "Application modules and UI match the owner-authorized 2026-10-29 local test source including common shareholders. Public shareholder profiles initialize missing caches only; published tags remain merged and personal notes are never exported.",
   "published_tags_included": true
 }

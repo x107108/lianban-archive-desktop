@@ -14,6 +14,7 @@ import database as db
 import industry
 import concept_tags
 import registration
+import shareholders
 import live_update
 import live_pool
 import suspension
@@ -51,9 +52,13 @@ def read_api(server, path):
     if parsed.path == "/api/meta" and hasattr(server, "industry_refresher"):
         server.industry_refresher.maybe_refresh()
         server.registration_refresher.maybe_refresh()
+        if hasattr(server, "shareholder_refresher"):
+            server.shareholder_refresher.maybe_refresh()
         if hasattr(server, "concept_refresher"):
             server.concept_refresher.maybe_refresh()
     with closing(db.connect(server.db_path)) as conn:
+        if parsed.path == "/api/stock-shareholders":
+            return shareholders.stock_view(conn, arg("code"), include_live=editable)
         if parsed.path == "/api/announcement":
             return db.get_announcement(conn)
         if parsed.path == "/api/site-links":
@@ -71,6 +76,7 @@ def read_api(server, path):
         metadata["capabilities"] = {"edit_tags": editable, "edit_blacklist": editable, "edit_notes": editable, "manage_tags": editable}
         metadata["tag_alias_revision"] = db.tag_alias_revision(conn)
         if parsed.path == "/api/meta":
+            metadata["shareholder_alerts"] = shareholders.today_alerts(conn, include_live=editable)
             if editable:
                 metadata["live"] = live_pool.metadata(conn)
             catalog = tag_management.catalog(conn)
@@ -251,6 +257,7 @@ def main():
     server.db_path = args.db
     server.industry_refresher = industry.Refresher(args.db)
     server.concept_refresher = concept_tags.Refresher(args.db)
+    server.shareholder_refresher = shareholders.Refresher(args.db)
     server.registration_refresher = registration.Refresher(args.db)
     server.suspension_refresher = suspension.Refresher(args.db)
     server.industry_refresher.maybe_refresh()
@@ -258,6 +265,7 @@ def main():
     server.registration_refresher.maybe_refresh()
     def after_archive_update():
         server.registration_refresher.maybe_refresh()
+        server.shareholder_refresher.maybe_refresh()
         server.concept_refresher.maybe_refresh()
         with closing(db.connect(args.db)) as conn:
             server.suspension_refresher.maybe_refresh(db.meta(conn)["latest_date"])

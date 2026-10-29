@@ -71,6 +71,17 @@ def connect(path=DEFAULT_DB):
             location TEXT NOT NULL, address TEXT NOT NULL,
             source TEXT NOT NULL, fetched_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS shareholder_profiles (
+            code TEXT NOT NULL, scope TEXT NOT NULL, report_date TEXT,
+            source TEXT NOT NULL, fetched_at TEXT NOT NULL,
+            PRIMARY KEY(code,scope)
+        );
+        CREATE TABLE IF NOT EXISTS stock_shareholders (
+            code TEXT NOT NULL, scope TEXT NOT NULL, holder_key TEXT NOT NULL,
+            holder_name TEXT NOT NULL, holder_type TEXT NOT NULL, report_date TEXT NOT NULL,
+            PRIMARY KEY(code,scope,holder_key)
+        );
+        CREATE INDEX IF NOT EXISTS shareholders_holder ON stock_shareholders(holder_key,code);
         CREATE TABLE IF NOT EXISTS stock_tag_overrides (
             code TEXT PRIMARY KEY, tags_json TEXT, revision INTEGER NOT NULL,
             updated_at TEXT NOT NULL
