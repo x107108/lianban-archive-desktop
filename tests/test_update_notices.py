@@ -1,9 +1,11 @@
 from pathlib import Path
 from threading import Event
 from uuid import uuid4
+from unittest.mock import patch
+import io
 import json
 import unittest
-from update_notices import NoticeService, normalize_notice, version_key
+from update_notices import NoticeService, normalize_notice, version_key, fetch_notice, FEED_URL, FALLBACK_FEED_URL
 
 
 def release(version='2026.10.21', **changes):
@@ -68,7 +70,7 @@ class UpdateNoticeTests(unittest.TestCase):
         service = self.service(fetch)
         service.refresh()
         self.finish(service)
-        self.now[0] += 3601
+        self.now[0] += 301
         service.refresh()
         self.finish(service)
         state = service.snapshot()
@@ -76,7 +78,7 @@ class UpdateNoticeTests(unittest.TestCase):
         self.assertEqual(state['notice']['version'], '2026.10.21')
         service.refresh()
         self.assertEqual(len(calls), 2)
-        self.now[0] += 901
+        self.now[0] += 61
         service.refresh()
         self.finish(service)
         self.assertEqual(len(calls), 3)
@@ -91,12 +93,38 @@ class UpdateNoticeTests(unittest.TestCase):
         self.finish(service)
         restarted = NoticeService(service.current_version, self.path, fetch, clock=lambda: self.now[0])
         self.assertEqual(restarted.snapshot()['notice']['id'], 'release:2026.10.21')
+        self.finish(restarted)
+        self.assertEqual(len(calls), 2, 'startup checks immediately even with a recent persistent cache')
         restarted.refresh(force=True)
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2)
         self.now[0] += 31
         restarted.refresh(force=True)
         self.finish(restarted)
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls), 3)
+
+    def test_public_feed_has_cache_busting_and_no_publisher_authentication(self):
+        with patch('update_notices.urllib.request.urlopen', return_value=io.BytesIO(json.dumps(release()).encode())) as opened:
+            self.assertEqual(fetch_notice()['version'], '2026.10.21')
+        request = opened.call_args.args[0]
+        self.assertTrue(request.full_url.startswith(FEED_URL + '?check='))
+        self.assertEqual(request.get_header('Cache-control'), 'no-cache')
+        self.assertIsNone(request.get_header('Authorization'))
+
+    def test_raw_feed_network_failure_or_invalid_json_uses_official_api_fallback(self):
+        for failure in (OSError('raw domain unavailable'), io.BytesIO(b'<html>unavailable</html>')):
+            with self.subTest(failure=type(failure).__name__), patch('update_notices.urllib.request.urlopen',
+                    side_effect=[failure, io.BytesIO(json.dumps(release()).encode())]) as opened:
+                self.assertEqual(fetch_notice()['version'], '2026.10.21')
+                self.assertTrue(opened.call_args.args[0].full_url.startswith(FALLBACK_FEED_URL + '&check='))
+                self.assertEqual(opened.call_args.args[0].get_header('Accept'), 'application/vnd.github.raw+json')
+
+    def test_oversized_responses_and_total_network_failure_are_rejected(self):
+        with patch('update_notices.urllib.request.urlopen', side_effect=[io.BytesIO(b'x'*65537), io.BytesIO(b'x'*65537)]):
+            with self.assertRaisesRegex(ValueError, 'too large'):
+                fetch_notice()
+        with patch('update_notices.urllib.request.urlopen', side_effect=OSError('offline')):
+            with self.assertRaises(OSError):
+                fetch_notice()
 
     def test_corrupt_or_future_cache_is_not_shown(self):
         for payload in ('broken', json.dumps({'notice': release(), 'checked_at': 9999999})):

@@ -1,5 +1,5 @@
 {
-  "id": "d39c8f00b8e3e4b1",
+  "id": "e0f8bd764767e6d5",
   "runtime": "vendor/python-3.13.16-embed-amd64.zip",
   "wheels": [
     "vendor/wheels/certifi-2026.7.22-py3-none-any.whl",
@@ -25,13 +25,13 @@
   "seed_database_sha256": "3609a9850a808c1473fffe85ead105665c0c22c9048b92e4cffb76b045aae4e3",
   "sha256": {
     "SOURCE_BASELINE.json": "0d23e0770137fb339dedb7c6ff0ffec6f2078d528eed4538e5231306f77d35ad",
-    "VERSION.json": "a73068c145b7412f942bd25f106388f1993b940fd08a4d7343f1e123dce9c21e",
+    "VERSION.json": "857a34ae62537e2ac091f3e00ba97cc19904ec4245c4ce979805d3191739b2f3",
     "app.py": "18a65c5377403a481a4d660012109d117e3fadd620c10355e1d527a405a299ce",
     "backup_db.py": "541b45b764d721fbaed7a2ad6ca39d7936ef7c115d33f154967c1e054c71a914",
     "collect_intraday.py": "ad056aba69a24f2814ea1b6d859b7b5255c92aa546bb8c12802bd8b1aece4f19",
     "concept_tags.py": "775fd3031faacd1bcea2c54df672ac8420a8a161384524bef43310b9ec5f4179",
     "database.py": "4b9fd4500175c752916df2c10210deb54df346f45a06fb5b9aca5927caf77f2d",
-    "desktop.py": "acddea7d666b75059be0945549f6027a30bb194cf27093acdaac64648af7f973",
+    "desktop.py": "d376ab92f6978565b0f6a6487f79c4c3822f384023179756cab881540d3cfcd7",
     "import_manual.py": "f7ad15f1d39c0c2c6adff769a987290594c5f9348c770aa61b571e6f75635c77",
     "industry.py": "f0aa0e9b3a927a3a1f5c02695c0d58c68ae51888677ac15c3693ffa40bd57bda",
     "install.cmd": "c50ae59fa210f283a10c9ecfab95510b4d5edf1132104cff0720cfc732e7c9e0",
@@ -61,7 +61,7 @@
     "suspension.py": "5b90dcf49f3f33ca0b4347f45fcb521a6571908abd3ff28c4e6dae8114215c12",
     "sync_data.py": "580744d67624b4f0e129c60d448a02739ce68ab4bf5488f6ef0f0964ca8f9f5d",
     "tag_management.py": "9bce111a1721f54475c2698836540fe253622e64f2db26f4da46c374efa696d5",
-    "update_notices.py": "a07b6b69695327bde7602d46393e5f613232aca61ce001e821bfa221bd7a9794",
+    "update_notices.py": "12d17cacae758462498b43012c3909cf7af5a2ea0aa8b8cab05935bf91d705ce",
     "vendor/SOURCES.json": "3a8ea342bad95c15de621504bd2e224b94dd30d94958f52d0d2d14614f1c6757",
     "vendor/python-3.13.16-embed-amd64.zip": "97dae5274cc54867065e8d5a3226e48c35017ed332a0fdb0e27d5b5821961297",
     "vendor/wheels/certifi-2026.7.22-py3-none-any.whl": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775",
@@ -81,7 +81,7 @@
     "web/index.html": "0aefc4e99d229936bfd852f5ce2b9b1f29fa0b369045274241c23825c8f00062",
     "web/realtime.js": "f506190c95af6f64ca05b71f6c1724ec0404fd2fc06ecf9f6da67f0e95d13df7",
     "web/styles.css": "df2d54c061d35113f5661fb4fa1081c488a3583dda3fa3b3f7718da2b786ba75",
-    "web/updates.css": "867c55d57e15768010f7c23c84a160b3bad8ee6122ade8b743783ab6b2065dfc",
-    "web/updates.js": "5c5985c1bae429eded3d88e3199d9fcc9a4bdd9dade32920c93c19018430496c"
+    "web/updates.css": "000e9fa1a79fc33d3e6197a3f7900e00153b67d8ac50f22566f573a0e7e846ba",
+    "web/updates.js": "c4959c87682817c6cee507557f3c2b72473edcaee0cfba337153a9b279d02d30"
   }
 }

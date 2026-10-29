@@ -40,6 +40,8 @@ def serve(port, no_updates=False):
                 filename = 'index.html' if path in ('/', '/index.html') else path[1:]
                 raw = (ROOT/'web'/filename).read_bytes()
                 if filename == 'index.html':
+                    raw = raw.replace('<span class="demo-label">实验版 <span>01</span></span>'.encode('utf-8'),
+                        ('<span class="demo-label" id="desktop-version" title="当前安装版本">共享版 <span>v' + version + '</span></span>').encode('utf-8'), 1)
                     extension = ('<link rel="stylesheet" href="/updates.css?v=' + version + '">'
                                  '<script src="/updates.js?v=' + version + '" defer></script>')
                     raw = raw.replace(b'</head>', extension.encode('utf-8') + b'</head>', 1)

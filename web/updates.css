@@ -2,6 +2,7 @@
 .update-unread-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--red);vertical-align:middle;margin-left:5px}
 .update-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 18px;margin:0 0 18px;border:1px solid #efc5bd;border-radius:8px;background:var(--red-soft);color:var(--red-dark);font-size:12px}
 .update-banner .text-button{font-size:12px;white-space:nowrap;color:var(--red-dark)}
+.update-banner.unavailable{background:#fff7e8;border-color:#e8d3a9;color:#896427}.update-banner.unavailable .text-button{color:#896427}
 .update-dialog{width:min(540px,calc(100vw - 32px));max-height:85vh;overflow:auto;margin:auto;padding:26px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);box-shadow:0 20px 70px #282d3826}
 .update-dialog::backdrop{background:#1e24304d}
 .update-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:6px}
@@ -14,5 +15,6 @@
 .update-notes{font-size:12px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere}
 .update-notice a{display:inline-flex;text-decoration:none;margin-top:20px}
 .update-hint{font-size:10px;line-height:1.8;color:var(--muted);margin-top:14px}
-.update-footer{display:flex;justify-content:flex-end;border-top:1px solid var(--line);margin-top:22px;padding-top:18px}
-@media(max-width:640px){.topbar-right{gap:12px}.update-banner{padding:10px 12px;align-items:flex-start;font-size:11px}.update-dialog{padding:20px}.update-notice{padding:14px}.update-banner .text-button{font-size:11px}}
+.update-footer{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);margin-top:22px;padding-top:18px}
+#desktop-version{letter-spacing:0;white-space:nowrap}#desktop-version span{white-space:nowrap}
+@media(max-width:640px){.topbar{height:auto;min-height:86px;gap:12px}.topbar-right{gap:8px 12px;flex-wrap:wrap;justify-content:flex-end}.update-banner{padding:10px 12px;align-items:flex-start;font-size:11px}.update-dialog{padding:20px}.update-notice{padding:14px}.update-banner .text-button{font-size:11px}}

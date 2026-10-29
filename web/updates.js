@@ -26,6 +26,8 @@
   let state = { current_version: '', notice: null, checking: true, checked_at: null, unavailable: false };
   let busy = false;
   let timer;
+  let remindAt = 0;
+  let remindedId = '';
 
   const button = element('button', 'text-button update-inbox-button', '站内信');
   button.type = 'button';
@@ -63,15 +65,18 @@
   const noticeTitle = element('h3');
   const date = element('p', 'update-date');
   const notes = element('p', 'update-notes');
-  const download = element('a', 'button primary', '查看新版与下载');
+  const download = element('a', 'button primary', '去更新');
   download.target = '_blank';
   download.rel = 'noopener noreferrer';
-  const hint = element('p', 'update-hint', '下载新版前先停止网站并备份个人数据。安装说明见发布页；你的标签、黑名单和备注保存在本机。');
+  const hint = element('p', 'update-hint', '请明确选择去更新或稍后提醒。稍后约 10 分钟再次提示，重新打开页面也会提醒。升级会保留你的标签、黑名单和备注。');
   card.append(noticeTitle, date, notes, download, hint);
   const check = element('button', 'button secondary', '检查更新');
   check.type = 'button';
   const footer = element('div', 'update-footer');
-  footer.append(check);
+  const later = element('button', 'button secondary', '稍后提醒');
+  later.type = 'button';
+  later.hidden = true;
+  footer.append(check, later);
   dialog.append(heading, current, status, card, footer);
   document.body.append(dialog);
 
@@ -85,15 +90,21 @@
     const unread = isUnread(notice, readId);
     badge.hidden = !unread;
     button.setAttribute('aria-label', unread ? '站内信，1 条未读更新' : '站内信');
-    banner.hidden = !unread || dialog.open;
-    if (notice) bannerText.textContent = '发现新版本 ' + notice.version + '，查看更新内容。';
+    banner.hidden = dialog.open || (!notice && !state.unavailable);
+    banner.classList.toggle('unavailable', !notice && state.unavailable);
+    bannerText.textContent = notice ? '发现新版本 v' + notice.version + '，升级提醒会保留到更新完成。'
+      : '更新检查未成功，暂时无法确认是否有新版，请重试。';
+    bannerAction.textContent = notice ? '查看更新' : '重试检查';
+    title.textContent = notice ? '发现新版，请选择更新方式' : '站内信';
+    close.hidden = Boolean(notice);
+    later.hidden = !notice;
     current.textContent = state.current_version ? '当前版本 ' + state.current_version : '正在读取版本信息';
     check.disabled = busy || state.checking;
     check.textContent = busy || state.checking ? '正在检查…' : '检查更新';
     status.textContent = state.checking ? '正在检查新版本…'
       : state.unavailable ? '暂时无法联网检查。已有消息仍可查看，网站可继续正常使用。'
       : notice ? '有一个新版本可供下载。'
-      : state.checked_at ? '暂无更新通知，当前已是最新发布版本。' : '暂时无法检查更新，请稍后重试。';
+      : state.checked_at ? '本次检查未发现比当前安装版本更新的正式版本。' : '暂时无法检查更新，请稍后重试。';
     card.hidden = !notice;
     if (notice) {
       noticeTitle.textContent = notice.title;
@@ -104,9 +115,23 @@
   }
   function openInbox() {
     if (!dialog.open) dialog.showModal();
-    markRead();
     render();
-    checkUpdates(false);
+    checkUpdates(true);
+  }
+  function showUpdatePrompt() {
+    const notice = state.notice && safeReleaseUrl(state.notice) ? state.notice : null;
+    if (!notice || dialog.open || document.visibilityState === 'hidden'
+        || (notice.id === remindedId && Date.now() < remindAt)
+        || document.querySelector('dialog[open]')) return;
+    dialog.showModal();
+    render();
+  }
+  function acknowledgeUpdate() {
+    markRead();
+    remindedId = state.notice.id;
+    remindAt = Date.now() + 10 * 60 * 1000;
+    dialog.close();
+    render();
   }
   async function checkUpdates(manual) {
     if (busy) return;
@@ -118,18 +143,28 @@
         { cache: 'no-store', signal: AbortSignal.timeout(8000) });
       if (!response.ok) throw new Error('Unavailable');
       state = await response.json();
-      if (dialog.open) markRead();
     } catch (_) { state.checking = false; state.unavailable = true; }
     finally { busy = false; render(); }
-    timer = setTimeout(() => checkUpdates(false), state.checking ? 1500 : 30 * 60 * 1000);
+    showUpdatePrompt();
+    const delay = state.checking ? 1500 : 60 * 1000;
+    timer = setTimeout(() => checkUpdates(false), remindAt > Date.now() ? Math.min(delay, remindAt - Date.now()) : delay);
   }
   button.addEventListener('click', openInbox);
   bannerAction.addEventListener('click', openInbox);
   close.addEventListener('click', () => dialog.close());
+  later.addEventListener('click', acknowledgeUpdate);
+  download.addEventListener('click', acknowledgeUpdate);
+  dialog.addEventListener('cancel', event => { if (state.notice && safeReleaseUrl(state.notice)) event.preventDefault(); });
   dialog.addEventListener('close', () => { render(); button.focus(); });
   check.addEventListener('click', () => checkUpdates(true));
   window.addEventListener('storage', event => {
     if (event.key === READ_KEY) { readId = event.newValue || ''; render(); }
   });
+  document.addEventListener('close', showUpdatePrompt, true);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') { showUpdatePrompt(); checkUpdates(true); }
+  });
+  window.addEventListener('online', () => checkUpdates(true));
+  window.addEventListener('focus', () => { if (document.visibilityState !== 'hidden') checkUpdates(true); });
   checkUpdates(false);
 })();
