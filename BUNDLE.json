@@ -1,5 +1,5 @@
 {
-  "id": "dc2b08b403ea1b78",
+  "id": "d39c8f00b8e3e4b1",
   "runtime": "vendor/python-3.13.16-embed-amd64.zip",
   "wheels": [
     "vendor/wheels/certifi-2026.7.22-py3-none-any.whl",
@@ -24,8 +24,8 @@
   "seed": "resources/archive-seed.sqlite3.gz",
   "seed_database_sha256": "3609a9850a808c1473fffe85ead105665c0c22c9048b92e4cffb76b045aae4e3",
   "sha256": {
-    "SOURCE_BASELINE.json": "7e43df64dbf67bafde1e091275c91913190c09951e048472902ad58d95ccfe2c",
-    "VERSION.json": "f572be505db398a062e30ab1d8093f1f80e48ab1259d83ea8bdb30d9972c3667",
+    "SOURCE_BASELINE.json": "0d23e0770137fb339dedb7c6ff0ffec6f2078d528eed4538e5231306f77d35ad",
+    "VERSION.json": "a73068c145b7412f942bd25f106388f1993b940fd08a4d7343f1e123dce9c21e",
     "app.py": "18a65c5377403a481a4d660012109d117e3fadd620c10355e1d527a405a299ce",
     "backup_db.py": "541b45b764d721fbaed7a2ad6ca39d7936ef7c115d33f154967c1e054c71a914",
     "collect_intraday.py": "ad056aba69a24f2814ea1b6d859b7b5255c92aa546bb8c12802bd8b1aece4f19",
@@ -73,7 +73,7 @@
     "vendor/wheels/urllib3-2.8.0-py3-none-any.whl": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3",
     "vendor/wheels/xlrd-2.0.2-py2.py3-none-any.whl": "ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9",
     "verify.cmd": "f4c923b410186203dc34ac01ef8f6942efaacde5909f124bba94b40a768f7da7",
-    "web/app.js": "8228b50167847759a0236602895187003ba83196c3e60ac6712170d05697a8f0",
+    "web/app.js": "0d50f4b08f728e9b9872f9917322a01d58abba9cb53d8ca966a828cf0e357afc",
     "web/fonts/NotoSansSC-VF.woff2": "7fabc1ef45ba1bd4d8dea904f51f408cfb515cf56c5ad813836df34c01171159",
     "web/fonts/OFL.txt": "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9",
     "web/fonts/SOURCE.md": "59c7342b9060486786ac37f018f9f20d7f6cbf6763aaad1fe439086c02f7503c",

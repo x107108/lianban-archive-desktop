@@ -16,6 +16,10 @@ const data={total:1,profiles:[{scope:"total",report_date:"2026-09-30",fetched_at
 function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,attributes:{},
   setAttribute(k,v){this.attributes[k]=v},removeAttribute(k){delete this.attributes[k]},getBoundingClientRect:()=>({left:1100,top:700,bottom:724})};}
 (async()=>{
+  assert.equal(context.shareholderTypeBlocked("其他"),true,"other holders are blocked by default");
+  assert.equal(context.shareholderTypeBlocked("QFII"),true);
+  assert.equal(context.shareholderTypeBlocked("基金"),true);
+  assert.equal(context.shareholderTypeBlocked("个人"),false);
   const a=anchor("000001"), b=anchor("000003");
   const first=context.showShareholderTooltip(a);
   await context.showShareholderTooltip(a);
@@ -111,9 +115,10 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   context.state.shareholderBlockedTypes.set("QFII",false);
   assert.equal(context.filteredShareholderRows(categories).map(p=>p.code).join(","),"000010,000011","categories may be restored independently");
   delete context.state.shareholderBlockedTypes;
-  context.localStorage={getItem:()=>JSON.stringify([["QFII",false],["个人",true]])};
+  context.localStorage={getItem:()=>JSON.stringify([["QFII",false],["个人",true],["其他",false]])};
   assert.equal(context.shareholderTypeBlocked("QFII"),false,"remember explicit overrides across reloads");
   assert.equal(context.shareholderTypeBlocked("个人"),true);
+  assert.equal(context.shareholderTypeBlocked("其他"),false,"an explicit personal choice overrides the new default");
   assert.equal(context.shareholderTypeBlocked("基金"),true);
   delete context.state.shareholderBlockedTypes;
   context.localStorage={getItem:()=>"invalid JSON"};

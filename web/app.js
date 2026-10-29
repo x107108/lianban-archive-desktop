@@ -1765,7 +1765,7 @@ function shareholderTypeBlocked(type) {
     } catch {}
     state.shareholderBlockedTypes = new Map(entries);
   }
-  return state.shareholderBlockedTypes.get(type) ?? ["基金", "QFII"].includes(type);
+  return state.shareholderBlockedTypes.get(type) ?? ["基金", "其他", "QFII"].includes(type);
 }
 
 function filteredShareholderRows(data) {

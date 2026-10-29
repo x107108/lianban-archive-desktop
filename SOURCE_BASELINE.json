@@ -23,7 +23,7 @@
     "suspension.py": "5b90dcf49f3f33ca0b4347f45fcb521a6571908abd3ff28c4e6dae8114215c12",
     "sync_data.py": "580744d67624b4f0e129c60d448a02739ce68ab4bf5488f6ef0f0964ca8f9f5d",
     "tag_management.py": "9bce111a1721f54475c2698836540fe253622e64f2db26f4da46c374efa696d5",
-    "web/app.js": "8228b50167847759a0236602895187003ba83196c3e60ac6712170d05697a8f0",
+    "web/app.js": "0d50f4b08f728e9b9872f9917322a01d58abba9cb53d8ca966a828cf0e357afc",
     "web/fonts/NotoSansSC-VF.woff2": "7fabc1ef45ba1bd4d8dea904f51f408cfb515cf56c5ad813836df34c01171159",
     "web/fonts/OFL.txt": "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9",
     "web/fonts/SOURCE.md": "59c7342b9060486786ac37f018f9f20d7f6cbf6763aaad1fe439086c02f7503c",
@@ -39,6 +39,12 @@
     "stock_note_entries",
     "stock_note_options"
   ],
-  "description": "Application modules and UI match the owner-authorized 2026-10-29 local test source including common shareholders. Public shareholder profiles initialize missing caches only; published tags remain merged and personal notes are never exported.",
-  "published_tags_included": true
+  "description": "Authorized source f6fc674 with a single owner-requested shareholder default-category adaptation. Public shareholder profiles initialize missing caches only; personal notes are never exported.",
+  "published_tags_included": true,
+  "authorized_adaptations": {
+    "web/app.js": {
+      "source_sha256": "8228b50167847759a0236602895187003ba83196c3e60ac6712170d05697a8f0",
+      "reason": "Owner requested default blocking of 其他 and QFII for the shared/server editions on 2026-10-29; keep the existing fund default and explicit personal choices."
+    }
+  }
 }
