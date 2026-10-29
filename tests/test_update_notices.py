@@ -103,12 +103,27 @@ class UpdateNoticeTests(unittest.TestCase):
         self.assertEqual(len(calls), 3)
 
     def test_public_feed_has_cache_busting_and_no_publisher_authentication(self):
-        with patch('update_notices.urllib.request.urlopen', return_value=io.BytesIO(json.dumps(release()).encode())) as opened:
+        with patch('update_notices.urllib.request.urlopen', side_effect=[io.BytesIO(json.dumps(release()).encode()), io.BytesIO(json.dumps(release()).encode())]) as opened:
             self.assertEqual(fetch_notice()['version'], '2026.10.21')
-        request = opened.call_args.args[0]
+        request = opened.call_args_list[0].args[0]
         self.assertTrue(request.full_url.startswith(FEED_URL + '?check='))
         self.assertEqual(request.get_header('Cache-control'), 'no-cache')
         self.assertIsNone(request.get_header('Authorization'))
+
+    def test_successful_but_stale_raw_response_does_not_hide_newer_api_message(self):
+        with patch('update_notices.urllib.request.urlopen', side_effect=[
+                io.BytesIO(json.dumps(release('2026.10.20')).encode()),
+                io.BytesIO(json.dumps(release('2026.10.21')).encode())]):
+            self.assertEqual(fetch_notice()['version'], '2026.10.21')
+
+    def test_raw_newer_than_api_is_kept_and_one_failed_source_does_not_discard_a_valid_message(self):
+        for other in (io.BytesIO(json.dumps(release('2026.10.20')).encode()), OSError('API unavailable')):
+            with patch('update_notices.urllib.request.urlopen', side_effect=[io.BytesIO(json.dumps(release()).encode()), other]):
+                self.assertEqual(fetch_notice()['version'], '2026.10.21')
+
+    def test_invalid_notice_schema_in_one_source_uses_valid_other_source(self):
+        with patch('update_notices.urllib.request.urlopen', side_effect=[io.BytesIO(b'{"version":"invalid"}'), io.BytesIO(json.dumps(release()).encode())]):
+            self.assertEqual(fetch_notice()['version'], '2026.10.21')
 
     def test_raw_feed_network_failure_or_invalid_json_uses_official_api_fallback(self):
         for failure in (OSError('raw domain unavailable'), io.BytesIO(b'<html>unavailable</html>')):

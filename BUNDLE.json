@@ -1,5 +1,5 @@
 {
-  "id": "e0f8bd764767e6d5",
+  "id": "edb424b3fb975c01",
   "runtime": "vendor/python-3.13.16-embed-amd64.zip",
   "wheels": [
     "vendor/wheels/certifi-2026.7.22-py3-none-any.whl",
@@ -25,7 +25,7 @@
   "seed_database_sha256": "3609a9850a808c1473fffe85ead105665c0c22c9048b92e4cffb76b045aae4e3",
   "sha256": {
     "SOURCE_BASELINE.json": "0d23e0770137fb339dedb7c6ff0ffec6f2078d528eed4538e5231306f77d35ad",
-    "VERSION.json": "857a34ae62537e2ac091f3e00ba97cc19904ec4245c4ce979805d3191739b2f3",
+    "VERSION.json": "4fdb985270ea84d690b04e809a1a149105ff75c925f7d5b54f2ca4d27dbba19f",
     "app.py": "18a65c5377403a481a4d660012109d117e3fadd620c10355e1d527a405a299ce",
     "backup_db.py": "541b45b764d721fbaed7a2ad6ca39d7936ef7c115d33f154967c1e054c71a914",
     "collect_intraday.py": "ad056aba69a24f2814ea1b6d859b7b5255c92aa546bb8c12802bd8b1aece4f19",
@@ -61,7 +61,7 @@
     "suspension.py": "5b90dcf49f3f33ca0b4347f45fcb521a6571908abd3ff28c4e6dae8114215c12",
     "sync_data.py": "580744d67624b4f0e129c60d448a02739ce68ab4bf5488f6ef0f0964ca8f9f5d",
     "tag_management.py": "9bce111a1721f54475c2698836540fe253622e64f2db26f4da46c374efa696d5",
-    "update_notices.py": "12d17cacae758462498b43012c3909cf7af5a2ea0aa8b8cab05935bf91d705ce",
+    "update_notices.py": "3d61b0b9b84c1227fd1e9ef945f4ab1d9da164c924a01273cdfc87ef24e2fee6",
     "vendor/SOURCES.json": "3a8ea342bad95c15de621504bd2e224b94dd30d94958f52d0d2d14614f1c6757",
     "vendor/python-3.13.16-embed-amd64.zip": "97dae5274cc54867065e8d5a3226e48c35017ed332a0fdb0e27d5b5821961297",
     "vendor/wheels/certifi-2026.7.22-py3-none-any.whl": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775",

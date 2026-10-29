@@ -45,6 +45,8 @@ def normalize_notice(value):
 
 def fetch_notice():
     # Both URLs are public repository data; no credentials or personal records are sent.
+    notices = []
+    last_error = None
     for url in (FEED_URL, FALLBACK_FEED_URL):
         separator = '&' if '?' in url else '?'
         request = urllib.request.Request(url + separator + 'check=' + str(int(time.time())),
@@ -55,18 +57,22 @@ def fetch_notice():
                 raw = response.read(65537)
             if len(raw) > 65536:
                 raise ValueError('Notice is too large')
-            return json.loads(raw)
-        except (OSError, ValueError):
-            if url == FALLBACK_FEED_URL:
-                raise
+            notices.append(normalize_notice(json.loads(raw)))
+        except (OSError, ValueError) as error:
+            last_error = error
+    if not notices:
+        raise last_error
+    # Raw can return an old document with HTTP 200 while Contents already has the new commit.
+    return max(notices, key=lambda notice: version_key(notice['version']))
 
 
 class NoticeService:
-    def __init__(self, current_version, cache_path, fetcher=fetch_notice, clock=time.time):
+    def __init__(self, current_version, cache_path, fetcher=None, clock=time.time):
         version_key(current_version)
         self.current_version = current_version
         self.cache_path = Path(cache_path)
-        self.fetcher, self.clock = fetcher, clock
+        self.fetcher = fetch_notice if fetcher is None else lambda: normalize_notice(fetcher())
+        self.clock = clock
         self.lock = threading.Lock()
         self.worker = None
         self.notice = None
@@ -98,7 +104,7 @@ class NoticeService:
 
     def _check(self):
         try:
-            notice = normalize_notice(self.fetcher())
+            notice = self.fetcher()
             checked_at = self.clock()
             with self.lock:
                 self.notice, self.checked_at, self.error = notice, checked_at, False
