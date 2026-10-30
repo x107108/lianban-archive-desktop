@@ -1,25 +1,22 @@
 const assert = require("node:assert/strict"), fs = require("node:fs"), vm = require("node:vm");
 const source = fs.readFileSync(require("node:path").join(__dirname,"../web/app.js"),"utf8");
-const tooltip = {hidden:true,innerHTML:"",style:{},getBoundingClientRect:()=>({width:530,height:400})};
+const tooltip = {hidden:true,innerHTML:"",style:{},getBoundingClientRect:()=>({width:530,height:400,top:12}),querySelector:()=>({focus(){}})};
 const infoDialog={open:false,showModal(){this.open=true;},close(){this.open=false;}};
 const infoContent={innerHTML:""};
 const pending=[];
 const context=vm.createContext({$:id=>id==="shareholder-info-dialog"?infoDialog:id==="shareholder-info-content"?infoContent:tooltip,state:{requests:{}},URLSearchParams,setTimeout,clearTimeout,
-  window:{innerWidth:1200,innerHeight:800},request:(url)=>new Promise((resolve,reject)=>pending.push({url,resolve,reject}))});
+  document:{},window:{innerWidth:1200,innerHeight:800},request:(url)=>new Promise((resolve,reject)=>pending.push({url,resolve,reject}))});
 vm.runInContext(source.slice(source.indexOf("function escapeHTML"),source.indexOf("function textValue")),context);
 vm.runInContext(source.slice(source.indexOf("function hideShareholderTooltip"),source.indexOf("function hideStockNoteTooltip")),context);
 vm.runInContext(source.slice(source.indexOf("function shareholderHasAlert"),source.indexOf("function renderStockCard")),context);
-const data={total:1,profiles:[{scope:"total",report_date:"2026-09-30",fetched_at:"2026-10-29T08:00:00+08:00"}],
+const data={code:"000001",name:"本股<&名称",total:1,profiles:[{scope:"total",report_date:"2026-09-30",fetched_at:"2026-10-29T08:00:00+08:00"},{scope:"float",report_date:"2026-06-30",fetched_at:"2026-10-29T08:00:00+08:00"}],
+  own_holders:{total:[{name:"本股机构<&",type:"其他",report_date:"2026-09-30",holding_ratio:46.74}],float:[{name:"香港中央结算有限公司",type:"香港中央结算有限公司",report_date:"2026-06-30",holding_ratio:21.110242096267}]},
   today:"2026-10-29",today_status:"provisional",today_fetched_at:"2026-10-29T10:30:00+08:00",today_stale:true,
   rows:[{code:"000002",name:"关联<&股票",today_together:true,shared_count:1,holders:[{name:"共同<script>机构",type:"投资公司",reports:[{scope:"float",date:"2026-09-30"}]}]}],
   coverage:2,requested:5,status:"updating",source:"公开源",scope_note:"按完整名称匹配"};
 function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,attributes:{},
   setAttribute(k,v){this.attributes[k]=v},removeAttribute(k){delete this.attributes[k]},getBoundingClientRect:()=>({left:1100,top:700,bottom:724})};}
 (async()=>{
-  assert.equal(context.shareholderTypeBlocked("其他"),true,"other holders are blocked by default");
-  assert.equal(context.shareholderTypeBlocked("QFII"),true);
-  assert.equal(context.shareholderTypeBlocked("基金"),true);
-  assert.equal(context.shareholderTypeBlocked("个人"),false);
   const a=anchor("000001"), b=anchor("000003");
   const first=context.showShareholderTooltip(a);
   await context.showShareholderTooltip(a);
@@ -33,6 +30,9 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   assert.ok(parseFloat(tooltip.style.left)+530<=1188);
   assert.ok(parseFloat(tooltip.style.top)+400<700);
   assert.ok(tooltip.innerHTML.includes('aria-label="共同股东说明"'));
+  assert.ok(tooltip.innerHTML.includes('<strong id="shareholder-stock-title">本股&lt;&amp;名称</strong>'),"the popup title is the stock name");
+  assert.ok(tooltip.innerHTML.includes('data-shareholder-tab="common" aria-selected="true"'));
+  assert.ok(!tooltip.innerHTML.includes('<details')&&!tooltip.innerHTML.includes('<summary'),"control information always stays expanded");
   assert.ok(!tooltip.innerHTML.includes("shareholder-footer")&&!tooltip.innerHTML.includes(data.scope_note)&&!tooltip.innerHTML.includes(data.source),"the list has no explanatory footer");
   context.state.shareholderData={...data,source:"公开<&来源",scope_note:"规则<script>纯文本</script>"};
   context.openShareholderInfo();
@@ -67,7 +67,96 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   assert.ok(context.renderShareholderTooltip(many).includes("data-shareholder-more"));
   assert.equal((context.renderShareholderTooltip(many,100).match(/data-shareholder-peer=/g)||[]).length,51);
   assert.ok(!context.renderShareholderTooltip(many,100).includes("data-shareholder-more"));
+  const controlled={...data,control_status:"current",control_checked:true,control_coverage:4,
+    control_owners:[{kind:"controller",name:"华通<&集团",type:"控股机构",via_name:"",source_url:"https://example.com/company",fetched_at:"2026-10-30T08:00:00+08:00"},
+      {kind:"actual_controller",name:"华通<&集团",type:"控股机构",via_name:"",source_url:"https://example.com/company",fetched_at:"2026-10-30T08:00:00+08:00"},
+      {kind:"parent_owner",name:"青岛国资委",type:"国资",via_name:"华通<&集团",source_url:"https://www.chinamoney.org.cn/source",fetched_at:"2026-10-30T08:00:00+08:00"}],
+    rows:[{code:"600600",name:"关联企业",today_together:true,shared_count:1,holders:[{name:"青岛国资委",type:"国资",reports:[],relations:[{kind:"actual_controller"}],own_relations:[{kind:"parent_owner"}]}]}]};
+  const controlHTML=context.renderShareholderTooltip(controlled);
+  assert.ok(controlHTML.includes('class="shareholder-control-columns"')&&controlHTML.includes('<h4>控股股东</h4>')&&controlHTML.includes('<h4>实际控制人</h4>'),"control and actual-control roles have separate columns");
+  assert.ok(controlHTML.includes("经 华通&lt;&amp;集团")&&!controlHTML.includes("华通<&集团"));
+  assert.ok(controlHTML.includes("本股：上层股东；对方：实际控制人")&&controlHTML.includes("1 项共同关系"));
+  assert.ok(controlHTML.includes('data-shareholder-block-type="国资">'),"new state-owner category defaults to visible");
+  context.state.shareholderAlertTypes=new Map([["001219",["国资"]]]);
+  assert.equal(context.shareholderHasAlert("001219"),true);
+  context.state.shareholderBlockedTypes.set("国资",true);
+  assert.equal(context.filteredShareholderRows(controlled).length,0);
+  assert.equal(context.shareholderHasAlert("001219"),false,"blocking upper-owner matches also clears their red dot");
+  context.state.shareholderBlockedTypes.set("国资",false);
+  context.state.shareholderData=controlled;context.openShareholderInfo();
+  assert.ok(infoContent.innerHTML.includes("4 / 5 只股票")&&infoContent.innerHTML.includes("2026-10-30 08:00"));
+  assert.ok(infoContent.innerHTML.includes("筹划中的转让不作为已完成关系")&&infoContent.innerHTML.includes("https://www.chinamoney.org.cn/source"));
+  infoDialog.close();
+  context.state.shareholderData=controlled;
+  context.state.shareholderBlockedTypes.set("其他",true);
+  context.state.shareholderBlockedTypes.set("香港中央结算有限公司",true);
+  const readsBeforeTabs=pending.length;
+  context.switchShareholderTab("holders");
+  assert.equal(pending.length,readsBeforeTabs,"changing tabs reuses the fetched stock data");
+  assert.equal(context.state.shareholderPinned,true);
+  assert.ok(tooltip.innerHTML.includes('data-shareholder-tab="holders" aria-selected="true"'));
+  assert.deepEqual([...tooltip.innerHTML.matchAll(/data-shareholder-tab="([^"]+)"/g)].map(match=>match[1]),["common","float","holders","subsidiaries"]);
+  assert.ok(tooltip.innerHTML.includes("报告期 2026-09-30")&&!tooltip.innerHTML.includes("报告期 2026-06-30"));
+  assert.ok(tooltip.innerHTML.includes("本股机构&lt;&amp;")&&!tooltip.innerHTML.includes("香港中央结算有限公司</span>"),"the total-holder tab contains only its own list and ignores common-holder blocks");
+  assert.ok(tooltip.innerHTML.includes("占总股本")&&!tooltip.innerHTML.includes("占总流通股本")&&!tooltip.innerHTML.includes("shareholder-own-summary"));
+  assert.ok(tooltip.innerHTML.includes("46.74%"));
+  const missingRatios=context.renderShareholderTooltip({...data,own_holders:{total:[{name:"真实零比例",type:"个人",holding_ratio:0},{name:"未披露比例",type:"个人",holding_ratio:null}],float:[]}});
+  assert.ok(missingRatios.includes("0.00%")&&missingRatios.includes("未披露"),"zero is displayed distinctly from an absent ratio");
+  context.switchShareholderTab("float");
+  assert.equal(pending.length,readsBeforeTabs,"both shareholder tabs reuse the fetched stock data");
+  assert.ok(tooltip.innerHTML.includes("报告期 2026-06-30")&&!tooltip.innerHTML.includes("报告期 2026-09-30"));
+  assert.ok(tooltip.innerHTML.includes("香港中央结算有限公司")&&!tooltip.innerHTML.includes("本股机构&lt;&amp;"));
+  assert.ok(tooltip.innerHTML.includes("占总流通股本")&&tooltip.innerHTML.includes("21.1102%")&&tooltip.innerHTML.includes("合计持股占比"));
+  const summary = ratios => {
+    const html=context.renderShareholderTooltip({...data,own_holders:{float:ratios.map((holding_ratio,i)=>({name:`股东${i}`,type:"其他",holding_ratio}))}});
+    return html.match(/<div class="shareholder-own-summary">[\s\S]*?<\/strong><\/div>/)?.[0] || "";
+  };
+  assert.ok(summary([1.23456,1.23456]).includes("2.4691%"),"aggregate the original ratios before rounding for display");
+  assert.ok(summary([46.74,3.5]).includes("50.24%"),"sum all holders despite their blocked category");
+  assert.ok(summary([20,null]).includes("20.00%")&&summary([20,null]).includes("已披露比例合计")&&summary([20,null]).includes("1 / 2 位股东已披露"));
+  assert.ok(summary([null]).includes("暂无数据")&&!summary([null]).includes("0.00%"),"unknown ratios cannot become a zero total");
+  assert.ok(summary([0]).includes("0.00%")&&summary([0]).includes("合计持股占比"));
+  assert.equal(summary([]),"","an absent list has no misleading total");
+  assert.ok(!tooltip.innerHTML.includes('data-shareholder-block-type=')&&!tooltip.innerHTML.includes('data-shareholder-peer='),"the own-list tab does not render peer filters or matches");
+  context.switchShareholderTab("common");
+  assert.ok(tooltip.innerHTML.includes('data-shareholder-block-type="国资"')&&!tooltip.innerHTML.includes('class="shareholder-own-list"'));
+  context.state.shareholderTab="holders";
+  const emptyLists=context.renderShareholderTooltip({...data,own_holders:{total:[],float:[]},profiles:[{scope:"total",report_date:null}]});
+  assert.ok(emptyLists.includes("来源暂无可用资料")&&!emptyLists.includes("资料正在获取"));
+  context.state.shareholderTab="float";
+  assert.ok(context.renderShareholderTooltip({...data,own_holders:{total:[],float:[]},profiles:[{scope:"total",report_date:null}]}).includes("资料正在获取"));
+  context.state.shareholderTab="common";
+  const subsidiaries=context.switchShareholderTab("subsidiaries");
+  const subsidiaryRead=pending.at(-1);
+  assert.equal(subsidiaryRead.url,"/api/stock-subsidiaries?code=000001");
+  assert.ok(tooltip.innerHTML.includes("正在读取子公司资料")&&tooltip.innerHTML.includes("对应股票"));
+  context.switchShareholderTab("common");
+  context.switchShareholderTab("subsidiaries");
+  assert.equal(pending.at(-1),subsidiaryRead,"returning to a loading tab does not duplicate the request");
+  subsidiaryRead.resolve({status:"current",rows:[{name:"生产<&公司",relation:"子公司",holding_ratio:"51%",business:"食品<script>生产"},{name:"未披露业务公司",relation:"孙公司",holding_ratio:"",business:""}],disclosure_date:"2026-08-21",fetched_at:"2026-10-30T10:00:00+08:00",source_url:"https://basic.10jqka.com.cn/000001/company.html"});
+  await subsidiaries;
+  assert.ok(tooltip.innerHTML.includes("生产&lt;&amp;公司")&&tooltip.innerHTML.includes("食品&lt;script&gt;生产")&&!tooltip.innerHTML.includes("<script>"));
+  assert.ok(tooltip.innerHTML.includes("2 家")&&tooltip.innerHTML.includes("持股 51%")&&tooltip.innerHTML.includes("业务暂未披露")&&tooltip.innerHTML.includes("公告 2026-08-21"));
+  assert.ok(!tooltip.innerHTML.includes("data-tag")&&!tooltip.innerHTML.includes("data-shareholder-block-type="),"business text is independent of tag management and holder filters");
+  context.switchShareholderTab("holders");await context.switchShareholderTab("subsidiaries");
+  assert.equal(pending.at(-1),subsidiaryRead,"loaded subsidiaries are reused within the popup");
   context.hideShareholderTooltip();
+  assert.equal(context.state.subsidiaryData,null);
+  context.state.shareholderData=data;
+  const staleSubsidiaries=context.switchShareholderTab("subsidiaries");
+  const staleRead=pending.at(-1);
+  context.hideShareholderTooltip();
+  staleRead.resolve({status:"current",rows:[]});await staleSubsidiaries;
+  assert.equal(tooltip.hidden,true,"a closed popup cannot be reopened by a subsidiary reply");
+  assert.equal(context.state.subsidiaryData,null);
+  context.state.shareholderData=data;
+  const failedSubsidiaries=context.switchShareholderTab("subsidiaries");
+  pending.at(-1).reject(new Error("private detail"));await failedSubsidiaries;
+  assert.ok(tooltip.innerHTML.includes("暂未获取成功")&&!tooltip.innerHTML.includes("private detail"));
+  context.state.subsidiaryData={status:"current",rows:[],fetched_at:"2026-10-30T10:00:00+08:00",source_url:"https://example.com"};
+  assert.ok(context.renderShareholderTooltip(data).includes("来源暂未披露控股子公司名单"));
+  context.hideShareholderTooltip();
+  assert.equal(context.state.shareholderTab,"common","a newly opened stock starts on common holders");
   const hover=context.showShareholderTooltip(a);
   context.scheduleShareholderHide();
   await context.toggleShareholderTooltip(a);
@@ -107,19 +196,41 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   assert.ok(categoryHTML.includes('data-shareholder-block-type="基金" checked')&&categoryHTML.includes('data-shareholder-block-type="QFII" checked'));
   assert.ok(categoryHTML.includes('data-shareholder-block-type="个人">'));
   assert.ok(categoryHTML.includes("3 只关联股票")&&!categoryHTML.includes('data-shareholder-peer="000010"'));
-  const heading=categoryHTML.slice(0,categoryHTML.indexOf('<div class="shareholder-filter">'));
-  assert.ok(heading.includes("共同股东")&&heading.includes("2026-10-29")&&!heading.includes("十大股东")&&!heading.includes("<br>"));
+  const heading=categoryHTML.slice(0,categoryHTML.indexOf('<section class="shareholder-controls"'));
+  assert.ok(heading.includes("本股&lt;&amp;名称")&&heading.includes("2026-10-29")&&!heading.includes("十大股东")&&!heading.includes("<br>"));
   context.state.shareholderBlockedTypes.set("个人",true);
   assert.equal(context.filteredShareholderRows(categories).length,0);
   assert.ok(context.renderShareholderTooltip(categories).includes("共同股东已全部屏蔽"));
   context.state.shareholderBlockedTypes.set("QFII",false);
   assert.equal(context.filteredShareholderRows(categories).map(p=>p.code).join(","),"000010,000011","categories may be restored independently");
   delete context.state.shareholderBlockedTypes;
-  context.localStorage={getItem:()=>JSON.stringify([["QFII",false],["个人",true],["其他",false]])};
+  context.localStorage={getItem:()=>JSON.stringify([["QFII",false],["个人",true]])};
   assert.equal(context.shareholderTypeBlocked("QFII"),false,"remember explicit overrides across reloads");
   assert.equal(context.shareholderTypeBlocked("个人"),true);
-  assert.equal(context.shareholderTypeBlocked("其他"),false,"an explicit personal choice overrides the new default");
   assert.equal(context.shareholderTypeBlocked("基金"),true);
+  assert.equal(context.shareholderTypeBlocked("其他"),true);
+  assert.equal(context.shareholderTypeBlocked("香港中央结算有限公司"),true,"the split inherits this edition's default Other block");
+  delete context.state.shareholderBlockedTypes;
+  context.localStorage={getItem:()=>JSON.stringify([["其他",false]])};
+  assert.equal(context.shareholderTypeBlocked("香港中央结算有限公司"),false,"an explicit visible Other preference is retained on first split");
+  delete context.state.shareholderBlockedTypes;
+  context.localStorage={getItem:()=>JSON.stringify([["其他",true]])};
+  assert.equal(context.shareholderTypeBlocked("香港中央结算有限公司"),true,"the first split retains the previous Other preference");
+  context.state.shareholderBlockedTypes.set("其他",false);
+  assert.equal(context.shareholderTypeBlocked("香港中央结算有限公司"),true,"the dedicated block becomes independent from Other");
+  const clearing={...data,rows:[{code:"000020",name:"结算关联",today_together:true,holders:[holder("香港中央结算有限公司","香港中央结算有限公司")]},
+    {code:"000021",name:"其他关联",today_together:true,holders:[holder("普通机构","其他")]}]};
+  context.state.shareholderAlertTypes=new Map([["000020",["香港中央结算有限公司"]],["000021",["其他"]]]);
+  assert.equal(context.filteredShareholderRows(clearing).map(p=>p.code).join(","),"000021");
+  assert.equal(context.shareholderHasAlert("000020"),false);
+  assert.equal(context.shareholderHasAlert("000021"),true);
+  delete context.state.shareholderBlockedTypes;
+  context.localStorage={getItem:()=>JSON.stringify([["其他",true],["香港中央结算有限公司",false]])};
+  assert.equal(context.shareholderTypeBlocked("香港中央结算有限公司"),false,"an explicit independent setting survives reloads");
+  assert.equal(context.shareholderTypeBlocked("其他"),true);
+  assert.equal(context.filteredShareholderRows(clearing).map(p=>p.code).join(","),"000020");
+  assert.equal(context.shareholderHasAlert("000020"),true);
+  assert.equal(context.shareholderHasAlert("000021"),false);
   delete context.state.shareholderBlockedTypes;
   context.localStorage={getItem:()=>"invalid JSON"};
   assert.equal(context.shareholderTypeBlocked("QFII"),true,"invalid preferences restore defaults");

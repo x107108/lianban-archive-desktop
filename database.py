@@ -74,14 +74,31 @@ def connect(path=DEFAULT_DB):
         CREATE TABLE IF NOT EXISTS shareholder_profiles (
             code TEXT NOT NULL, scope TEXT NOT NULL, report_date TEXT,
             source TEXT NOT NULL, fetched_at TEXT NOT NULL,
+            ratio_checked INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY(code,scope)
         );
         CREATE TABLE IF NOT EXISTS stock_shareholders (
             code TEXT NOT NULL, scope TEXT NOT NULL, holder_key TEXT NOT NULL,
             holder_name TEXT NOT NULL, holder_type TEXT NOT NULL, report_date TEXT NOT NULL,
+            holding_ratio REAL,
             PRIMARY KEY(code,scope,holder_key)
         );
         CREATE INDEX IF NOT EXISTS shareholders_holder ON stock_shareholders(holder_key,code);
+        CREATE TABLE IF NOT EXISTS stock_control_profiles (
+            code TEXT PRIMARY KEY, source TEXT NOT NULL, fetched_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS stock_control_owners (
+            code TEXT NOT NULL, kind TEXT NOT NULL, holder_key TEXT NOT NULL,
+            holder_name TEXT NOT NULL, holder_type TEXT NOT NULL, via_name TEXT NOT NULL,
+            source_url TEXT NOT NULL, fetched_at TEXT NOT NULL,
+            PRIMARY KEY(code,kind,holder_key)
+        );
+        CREATE INDEX IF NOT EXISTS control_owners_holder ON stock_control_owners(holder_key,code);
+        CREATE TABLE IF NOT EXISTS subsidiary_profiles (
+            code TEXT PRIMARY KEY, disclosure_date TEXT, companies_json TEXT,
+            source_url TEXT NOT NULL DEFAULT '', fetched_at TEXT,
+            attempted_at TEXT NOT NULL, error TEXT NOT NULL DEFAULT ''
+        );
         CREATE TABLE IF NOT EXISTS stock_tag_overrides (
             code TEXT PRIMARY KEY, tags_json TEXT, revision INTEGER NOT NULL,
             updated_at TEXT NOT NULL
@@ -128,6 +145,10 @@ def connect(path=DEFAULT_DB):
             full_day INTEGER NOT NULL, PRIMARY KEY(date,code)
         );
     """)
+    if "holding_ratio" not in {row[1] for row in conn.execute("PRAGMA table_info(stock_shareholders)")}:
+        conn.execute("ALTER TABLE stock_shareholders ADD COLUMN holding_ratio REAL")
+    if "ratio_checked" not in {row[1] for row in conn.execute("PRAGMA table_info(shareholder_profiles)")}:
+        conn.execute("ALTER TABLE shareholder_profiles ADD COLUMN ratio_checked INTEGER NOT NULL DEFAULT 0")
     if conn.execute("SELECT 1 FROM settings WHERE key='stock_note_history'").fetchone() is None:
         with conn:
             conn.execute("INSERT INTO stock_note_entries(code,occurred_at,content,updated_at) "

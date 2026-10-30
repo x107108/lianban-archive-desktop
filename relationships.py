@@ -9,14 +9,6 @@ from collections import defaultdict
 import re
 
 
-def competition_group(row):
-    market = row["market"]
-    if market in ("沪市主板", "深市主板"):
-        market = "主板"
-    risk_warning = "ST" in row["name"].upper().replace(" ", "")
-    return market, risk_warning
-
-
 def _add_period_leaders(conn, segments, code, peer_code, end, indices, exclude_st=False, exclude_gem=False):
     """Pick another stock by the full observed run that intersects each period."""
     eligible = defaultdict(list)
@@ -168,7 +160,7 @@ def stock_relationships(conn, code, start, end, settings):
             common["dates"].append({"date": day, "target_boards": height, "peer_boards": peer["boards"]})
 
         peers = [peer for peer in by_date[day].values() if peer["code"] != code
-                 and peer["boards"] == height and competition_group(peer) == competition_group(target)]
+                 and peer["boards"] == height]
         next_day = next_dates.get(day)
         within_range = bool(next_day and next_day <= end)
         ready = within_range and coverage.get(next_day) == "ok"
@@ -258,7 +250,7 @@ def stock_relationships(conn, code, start, end, settings):
         elif not target_days:
             empty_reasons[outcome] = "已收录数据中没有本票的涨停记录，无法比较胜负。"
         elif not any(row["peer_count"] for row in rounds):
-            empty_reasons[outcome] = "本票涨停日中未发现同组同板数的对手，暂无竞争记录。"
+            empty_reasons[outcome] = "本票涨停日中未发现同日同板数的对手，暂无竞争记录。"
         elif cutoff:
             next_label = f"{next_result_date} 的结果" if next_result_date else "下一交易日的结果"
             empty_reasons[outcome] = (f"本票最后在 {cutoff['date']} 收录为 {cutoff['boards']} 板；"
@@ -282,7 +274,7 @@ def stock_relationships(conn, code, start, end, settings):
                             "compared_rounds": len(comparable),
                             "empty_reasons": empty_reasons, "next_result_date": next_result_date,
                             "verification": "pending",
-                            "scope_note": "同日同板数，下一交易日单方晋级；沪深主板合并，ST 与普通股分开比较。"
+                            "scope_note": "全市场已收录股票按同日同板数统一比较，包含 ST，不按交易板块分组；下一交易日单方晋级。"
                                           "每个晋级批次计 1 轮胜负，同一轮涉及的对手另行列出。"
                                           "胜负按涨停池记录比较，未入池一方待行情核实，不代表已确认断板。"},
             "cooccurrences": {"rows": common_rows, "stock_count": len(common_rows),

@@ -40,8 +40,6 @@ def serve(port, no_updates=False):
                 filename = 'index.html' if path in ('/', '/index.html') else path[1:]
                 raw = (ROOT/'web'/filename).read_bytes()
                 if filename == 'index.html':
-                    raw = raw.replace('<span class="demo-label">实验版 <span>01</span></span>'.encode('utf-8'),
-                        ('<span class="demo-label" id="desktop-version" title="当前安装版本">共享版 <span>v' + version + '</span></span>').encode('utf-8'), 1)
                     extension = ('<link rel="stylesheet" href="/updates.css?v=' + version + '">'
                                  '<script src="/updates.js?v=' + version + '" defer></script>')
                     raw = raw.replace(b'</head>', extension.encode('utf-8') + b'</head>', 1)
@@ -89,6 +87,7 @@ def serve(port, no_updates=False):
         app.live_update.Refresher = OfflineRefresher
         app.live_pool.Refresher = OfflineRefresher
         app.shareholders.Refresher = OfflineRefresher
+        app.control_owners.Refresher = OfflineRefresher
     sys.argv = [str(ROOT/'app.py'), '--port', str(port), '--db', str(ROOT/'data/archive.sqlite3')]
     session['state'] = 'running'
     session_file.write_text(json.dumps(session), encoding='utf-8')

@@ -159,22 +159,46 @@ class RelationshipTests(unittest.TestCase):
         self.assertEqual(result["competition"]["wins"], [])
         self.assertEqual(result["cooccurrences"]["rows"], [])
 
-    def test_competition_merges_main_boards_but_excludes_other_heights_boards_and_st(self):
+    def test_competition_uses_all_markets_and_st_but_keeps_heights_separate(self):
         self.save(self.start, [event(), event("000001", "同级乙"), event("300001", "创业板", 2),
                                event("688001", "科创板", 2), event("600002", "ST风险股", 2),
+                               event("830001", "北交所", 2),
                                event("000002", "不同高度", 1)])
         self.save("2026-07-24", [event(boards=3)])
-        result = self.relations()
-        self.assertEqual([r["code"] for r in result["competition"]["wins"]], ["000001"])
-        self.assertEqual(result["cooccurrences"]["stock_count"], 5)
+        expected = {"600001", "000001", "300001", "688001", "600002", "830001"}
+        result = self.relations(end="2026-07-24")
+        competition = result["competition"]
+        self.assertEqual({r["code"] for r in competition["wins"]}, expected - {"600001"})
+        self.assertEqual((competition["win_count"], competition["win_round_count"]), (5, 1))
+        round_record = next(r for r in competition["rounds"] if r["date"] == self.start)
+        self.assertEqual({p["code"] for p in round_record["cohort"]}, expected)
+        self.assertEqual(round_record["peer_count"], 5)
+        self.assertEqual(result["cooccurrences"]["stock_count"], 6)
+        for code in expected - {"600001"}:
+            with self.subTest(code=code):
+                reverse = self.relations(code, end="2026-07-24")["competition"]
+                self.assertEqual([r["code"] for r in reverse["losses"]], ["600001"])
+                self.assertEqual((reverse["loss_count"], reverse["loss_round_count"]), (1, 1))
+                self.assertEqual({p["code"] for p in reverse["rounds"][0]["cohort"]}, expected)
 
-    def test_historical_st_name_controls_group_not_latest_stock_name(self):
+    def test_historical_st_names_retained_while_st_and_ordinary_stocks_share_cohort(self):
         self.save(self.start, [event("600001", "ST测试甲"), event("000001", "*ST测试乙"), event("000002", "普通股")])
         self.save("2026-07-24", [event("600001", "ST测试甲", 3)])
         self.save("2026-07-30", [event("000001", "摘帽名称", 1)])
         result = self.relations(end="2026-07-24")["competition"]
-        self.assertEqual([r["code"] for r in result["wins"]], ["000001"])
+        self.assertEqual([r["code"] for r in result["wins"]], ["000001", "000002"])
         self.assertEqual(result["wins"][0]["name"], "*ST测试乙")
+
+    def test_gem_promotion_has_symmetric_wins_over_main_and_star_stocks(self):
+        self.save(self.start, [event(), event("300001", "创业板"), event("688001", "科创板")])
+        self.save("2026-07-24", [event("300001", "创业板", 3)])
+        gem = self.relations("300001", end="2026-07-24")["competition"]
+        self.assertEqual({r["code"] for r in gem["wins"]}, {"600001", "688001"})
+        self.assertEqual((gem["win_count"], gem["win_round_count"]), (2, 1))
+        for code in ("600001", "688001"):
+            lost = self.relations(code, end="2026-07-24")["competition"]
+            self.assertEqual([r["code"] for r in lost["losses"]], ["300001"])
+            self.assertEqual(lost["rounds"][0]["peer_count"], 2)
 
     def test_both_promoting_or_both_absent_create_no_win_or_loss(self):
         self.save(self.start, [event(), event("000001", "对手乙")])
@@ -285,7 +309,7 @@ class RelationshipTests(unittest.TestCase):
         self.assertEqual(result["pending_rounds"], 0)
         self.assertEqual(len(result["rounds"]), 2)
         self.assertTrue(all(row["outcome"] == "no_peers" for row in result["rounds"]))
-        self.assertIn("未发现同组同板数", result["empty_reasons"]["wins"])
+        self.assertIn("未发现同日同板数", result["empty_reasons"]["wins"])
 
     def test_missing_result_explains_empty_lists_instead_of_claiming_no_losses(self):
         self.save(self.start, [event(), event("000001", "对手乙")])

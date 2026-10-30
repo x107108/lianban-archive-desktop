@@ -138,8 +138,10 @@ class Refresher:
             with closing(db.connect(self.path)) as conn:
                 settings = db.get_settings(conn)
                 last = settings.get(f"{self.prefix}_fetched_at")
-                missing_profiles = self.prefix in ("registration", "concept", "shareholder") and conn.execute(
+                missing_profiles = self.prefix in ("registration", "concept", "shareholder", "control_owner") and conn.execute(
                     "SELECT COUNT(*) FROM stocks").fetchone()[0] > settings.get(f"{self.prefix}_requested", 0)
+                if self.prefix == "shareholder" and not missing_profiles:
+                    missing_profiles = conn.execute("SELECT 1 FROM shareholder_profiles WHERE ratio_checked=0 LIMIT 1").fetchone() is not None
                 max_age = timedelta(hours=1) if self.prefix == "concept" and settings.get("concept_errors", 0) else MAX_AGE
                 if last and datetime.now(db.TZ) - datetime.fromisoformat(last) < max_age and not missing_profiles:
                     return

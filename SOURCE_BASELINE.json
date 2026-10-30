@@ -1,15 +1,15 @@
 {
   "project": "lianban-archive-desktop",
-  "source_commit": "f6fc674734f96c59fa7fe96c38aa6ac20856b6bc",
-  "source_date": "2026-10-29",
+  "source_commit": "562c414031fbe43f45e9a513790ce7918496d950",
+  "source_date": "2026-10-30",
   "identity_sha256": {
-    "app.py": "18a65c5377403a481a4d660012109d117e3fadd620c10355e1d527a405a299ce",
+    "app.py": "06e80fd90e8c1158cbb9c453fa802db3087459fdbc96d3acc08b58ebe66b0c43",
     "backup_db.py": "541b45b764d721fbaed7a2ad6ca39d7936ef7c115d33f154967c1e054c71a914",
     "collect_intraday.py": "ad056aba69a24f2814ea1b6d859b7b5255c92aa546bb8c12802bd8b1aece4f19",
     "concept_tags.py": "775fd3031faacd1bcea2c54df672ac8420a8a161384524bef43310b9ec5f4179",
-    "database.py": "4b9fd4500175c752916df2c10210deb54df346f45a06fb5b9aca5927caf77f2d",
+    "database.py": "af4d7ea8d4b6c73b675df961180985d027564589a54e7551c281f750b58b53da",
     "import_manual.py": "f7ad15f1d39c0c2c6adff769a987290594c5f9348c770aa61b571e6f75635c77",
-    "industry.py": "f0aa0e9b3a927a3a1f5c02695c0d58c68ae51888677ac15c3693ffa40bd57bda",
+    "industry.py": "cdb1dda2a1d216326756762de99bed3cb9449c2caa6ac3b46f7476666d6f462b",
     "intraday.py": "7f979394801d999bcc3fd38376329acfc88d9fe15afbe194ed983761f02f40ef",
     "intraday_sources.py": "384a7fb2d693cb4e198e996afb294b4c6e381ad5a39e2f8323d15b8233952559",
     "intraday_timeline.py": "fd9d43c8574c1ae283d0519b5c1e75ff283472b98d169cdd25341efd9424f5b2",
@@ -18,18 +18,21 @@
     "provider.py": "2cc252de4124888f681d7c178049ed9382d475ccafb6f0195dcfef35c781a822",
     "provinces.py": "e3fc2108bd9ddea86f3c081a40cfc524ed58b1cdfd07a308d5e857348757b02c",
     "registration.py": "83925eb8edc0a3abdc63ece99290df59df3f56a31d8e1a95516d9f71f87f73f0",
-    "relationships.py": "7b81a36f2ebb5a681f02a8a95fed483865f971a3d957bf26b1119863d4bca137",
-    "shareholders.py": "4c39c7d618feb05da08c4ee27bb597b96ec4106586d21ba81639022d34eb12e9",
+    "relationships.py": "c7408a304581995fb470e95b2afce634a6f54ec682f8083f647e1f9f1d244b71",
+    "shareholders.py": "da05609c676cfb1905b7ff12aed928c43d35796f09eac440cacf1ea69ddd8436",
     "suspension.py": "5b90dcf49f3f33ca0b4347f45fcb521a6571908abd3ff28c4e6dae8114215c12",
     "sync_data.py": "580744d67624b4f0e129c60d448a02739ce68ab4bf5488f6ef0f0964ca8f9f5d",
     "tag_management.py": "9bce111a1721f54475c2698836540fe253622e64f2db26f4da46c374efa696d5",
-    "web/app.js": "0d50f4b08f728e9b9872f9917322a01d58abba9cb53d8ca966a828cf0e357afc",
+    "web/app.js": "964817391c5143b6fe847199e3b9a28cabd53ac5370a3012d5870ac4b4babc04",
     "web/fonts/NotoSansSC-VF.woff2": "7fabc1ef45ba1bd4d8dea904f51f408cfb515cf56c5ad813836df34c01171159",
     "web/fonts/OFL.txt": "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9",
     "web/fonts/SOURCE.md": "59c7342b9060486786ac37f018f9f20d7f6cbf6763aaad1fe439086c02f7503c",
     "web/images/title-companions.jpg": "c69048e24698593955967ee22f2982235ee2b0fec1df9c67940f27a34f79dc67",
-    "web/index.html": "0aefc4e99d229936bfd852f5ce2b9b1f29fa0b369045274241c23825c8f00062",
-    "web/styles.css": "df2d54c061d35113f5661fb4fa1081c488a3583dda3fa3b3f7718da2b786ba75"
+    "web/index.html": "54ee23de4d426e64ae265317875f869fa6e1470f64fcd579c2434fc3b5f95afe",
+    "web/styles.css": "9e2252991c9bb285e43737f143c6dc7c770539b934589da7ccfd6f5c4ca0c78f",
+    "app_version.py": "b96cf7196fe2080507bfb3d492c57e27b2cbffdc4edd2a2fa0a634dbdf5c6ef8",
+    "control_owners.py": "fe4d976ea1f6a54ff0aa88cf6a4a547e4b1bb1279adcba4ea05c237b6e62378b",
+    "subsidiaries.py": "23eacb6d2be339429512b88fdd96fa2ed5abca5c24ceeb1ba374b89a70488514"
   },
   "excluded_personal_tables": [
     "stock_tag_overrides",
@@ -39,12 +42,16 @@
     "stock_note_entries",
     "stock_note_options"
   ],
-  "description": "Authorized source f6fc674 with a single owner-requested shareholder default-category adaptation. Public shareholder profiles initialize missing caches only; personal notes are never exported.",
+  "description": "Authorized 2026-10-30 shareholder popup and all-market competition sync from 562c414. Retain edition defaults and independent installed identity; export normalized public caches only.",
   "published_tags_included": true,
   "authorized_adaptations": {
     "web/app.js": {
-      "source_sha256": "8228b50167847759a0236602895187003ba83196c3e60ac6712170d05697a8f0",
-      "reason": "Owner requested default blocking of 其他 and QFII for the shared/server editions on 2026-10-29; keep the existing fund default and explicit personal choices."
+      "source_sha256": "bad538325edefaf78d1f4be1d69753cc5b0233b3cbb0974ee6f7bf0482040127",
+      "reason": "Shared/server defaults block funds, Other and QFII. The newly separated clearing holder inherits the effective Other preference; explicit personal choices prevail."
+    },
+    "app_version.py": {
+      "source_sha256": "ce26671daacc0e3791331cddfc969e45d48beaa9fcbed0ffe27a8198cc335337",
+      "reason": "Report the actual installed shared VERSION.json and shared channel, independently of local test and server versions."
     }
   }
 }

@@ -11,10 +11,13 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import database as db
+import app_version
 import industry
 import concept_tags
 import registration
 import shareholders
+import control_owners
+import subsidiaries
 import live_update
 import live_pool
 import suspension
@@ -39,6 +42,8 @@ def read_api(server, path):
     args = parse_qs(parsed.query)
     arg = lambda name, default="": args.get(name, [default])[0]
     editable = not getattr(server, "read_only", False)
+    if parsed.path == "/api/stock-subsidiaries":
+        return subsidiaries.stock_view(server.db_path, arg("code"), refresh=editable)
     if parsed.path == "/api/intraday":
         return intraday.overview(server.db_path, arg("date") or None, include_live=editable)
     if parsed.path == "/api/intraday/stock":
@@ -54,6 +59,8 @@ def read_api(server, path):
         server.registration_refresher.maybe_refresh()
         if hasattr(server, "shareholder_refresher"):
             server.shareholder_refresher.maybe_refresh()
+        if hasattr(server, "control_owner_refresher"):
+            server.control_owner_refresher.maybe_refresh()
         if hasattr(server, "concept_refresher"):
             server.concept_refresher.maybe_refresh()
     with closing(db.connect(server.db_path)) as conn:
@@ -76,6 +83,7 @@ def read_api(server, path):
         metadata["capabilities"] = {"edit_tags": editable, "edit_blacklist": editable, "edit_notes": editable, "manage_tags": editable}
         metadata["tag_alias_revision"] = db.tag_alias_revision(conn)
         if parsed.path == "/api/meta":
+            metadata["app_version"] = {"channel": app_version.CHANNEL, "version": app_version.VERSION}
             metadata["shareholder_alerts"] = shareholders.today_alerts(conn, include_live=editable)
             if editable:
                 metadata["live"] = live_pool.metadata(conn)
@@ -258,6 +266,7 @@ def main():
     server.industry_refresher = industry.Refresher(args.db)
     server.concept_refresher = concept_tags.Refresher(args.db)
     server.shareholder_refresher = shareholders.Refresher(args.db)
+    server.control_owner_refresher = control_owners.Refresher(args.db)
     server.registration_refresher = registration.Refresher(args.db)
     server.suspension_refresher = suspension.Refresher(args.db)
     server.industry_refresher.maybe_refresh()
@@ -266,6 +275,7 @@ def main():
     def after_archive_update():
         server.registration_refresher.maybe_refresh()
         server.shareholder_refresher.maybe_refresh()
+        server.control_owner_refresher.maybe_refresh()
         server.concept_refresher.maybe_refresh()
         with closing(db.connect(args.db)) as conn:
             server.suspension_refresher.maybe_refresh(db.meta(conn)["latest_date"])

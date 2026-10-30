@@ -822,6 +822,8 @@ function bindTagBatch() {
 }
 
 function renderMeta(meta, initial = false) {
+  $("app-version").textContent = meta.app_version ? `${meta.app_version.channel} · v${meta.app_version.version}` : "";
+  $("app-version").hidden = !meta.app_version;
   state.shareholderAlertTypes = new Map((meta.shareholder_alerts?.rows || []).map(row => [row.code, row.types]));
   syncShareholderAlertIcons();
   document.documentElement.classList.toggle("read-only", !canEditTags());
@@ -900,7 +902,7 @@ function renderMeta(meta, initial = false) {
     ? `注册省份：公司当前资料 · ${dateLabel(meta.registration_fetched_at.slice(0, 10))} 获取${registrationStatus === "updating" ? " · 正在检查更新" : registrationStatus === "error" ? " · 更新失败，使用缓存" : ""}`
     : registrationStatus === "error" ? "注册省份暂未获取成功，稍后自动重试。" : "正在自动获取公司注册省份…";
   $("method-note").textContent += "\n\n注册省份来自东方财富公司当前资料的省份字段，仅获取和保存省份。";
-  $("method-note").textContent += "\n\n个股历史、同期竞争和同日涨停统一按全部已收录数据的起止日期统计，上方查询日期仅用于当日涨停查询。同期竞争比较前日同板数、下一交易日的晋级情况，沪深主板合并、ST 单独比较。从首板进二板到更高板数都逐轮展示，每个晋级批次计 1 轮胜负，同一轮涉及的对手另行列出；对手名单中的数字为与该股票交手的轮次。赢过和输给的名单均为涨停池比较结果；未入池不代表已确认未涨停，胜负标记为待行情核实。缺失交易日及最新收录日之后的结果不计入胜负。同日涨停统计全市场已收录股票，不限板数，每只股票每天计 1 次，不含本票，并列出具体日期。";
+  $("method-note").textContent += "\n\n个股历史、同期竞争和同日涨停统一按全部已收录数据的起止日期统计，上方查询日期仅用于当日涨停查询。同期竞争按全市场已收录股票比较前日同板数、下一交易日的晋级情况，包含 ST，主板、创业板、科创板和北交所统一比较。从首板进二板到更高板数都逐轮展示，每个晋级批次计 1 轮胜负，同一轮涉及的对手另行列出；对手名单中的数字为与该股票交手的轮次。赢过和输给的名单均为涨停池比较结果；未入池不代表已确认未涨停，胜负标记为待行情核实。缺失交易日及最新收录日之后的结果不计入胜负。同日涨停统计全市场已收录股票，不限板数，每只股票每天计 1 次，不含本票，并列出具体日期。";
   $("method-note").textContent += "\n\n交易日概览的最高连板包含停牌保留高度。停复牌资料来自东方财富，只有确认全天停牌、且停牌前一交易日有连板记录的股票才保留原高度；不会把停牌日记为涨停，也不会增加涨停家数或同日涨停次数。复牌当日起不再按停牌保留。";
   state.metaPoll = setTimeout(refreshMeta, autoStatus === "updating" || industryStatus === "updating" || registrationStatus === "updating" || meta.suspension_updating ? 3000 : 60000);
 }
@@ -1743,11 +1745,15 @@ function hideShareholderTooltip() {
   if ($("shareholder-info-dialog").open) $("shareholder-info-dialog").close();
   state.shareholderGeneration = (state.shareholderGeneration || 0) + 1;
   state.requests?.shareholders?.abort();
+  state.requests?.subsidiaries?.abort();
   state.shareholderAnchor?.removeAttribute("aria-controls");
   state.shareholderAnchor?.setAttribute("aria-expanded", "false");
   state.shareholderAnchor = null;
   state.shareholderPinned = false;
   state.shareholderData = null;
+  state.subsidiaryData = null;
+  state.subsidiaryLoading = false;
+  state.shareholderTab = "common";
   $("shareholder-tooltip").hidden = true;
 }
 
@@ -1764,6 +1770,9 @@ function shareholderTypeBlocked(type) {
       if (Array.isArray(saved)) entries = saved.filter(item => Array.isArray(item) && typeof item[0] === "string" && typeof item[1] === "boolean");
     } catch {}
     state.shareholderBlockedTypes = new Map(entries);
+    if (!state.shareholderBlockedTypes.has("香港中央结算有限公司")) {
+      state.shareholderBlockedTypes.set("香港中央结算有限公司", state.shareholderBlockedTypes.get("其他") ?? true);
+    }
   }
   return state.shareholderBlockedTypes.get(type) ?? ["基金", "其他", "QFII"].includes(type);
 }
@@ -1778,18 +1787,72 @@ function filteredShareholderRows(data) {
 
 function renderShareholderTooltip(data, limit = 50) {
   const scopes = {total: "十大股东", float: "十大流通"};
+  const kinds = {...scopes, controller: "控股股东", actual_controller: "实际控制人", parent_owner: "上层股东"};
+  const relationText = relations => [...new Set(relations.map(r => kinds[r.kind]))].join(" / ");
+  const controls = data.control_owners || [];
+  const tab = state.shareholderTab || "common";
+  const controlEmpty = data.control_status === "error" ? "暂未获取成功" : data.control_checked ? "暂无明确披露" : "正在获取";
   const profiles = data.profiles.filter(p => p.report_date);
   const rows = filteredShareholderRows(data);
   const types = [...new Set(data.rows.flatMap(peer => peer.holders.map(holder => holder.type)))].sort((a, b) => a.localeCompare(b, "zh-CN"));
   const today = data.today_status === "unavailable" ? "今天的涨停数据尚未取得，暂不标记同涨停"
     : `${escapeHTML(data.today)} · ${data.today_status === "provisional" ? "盘中暂定" : "收盘确认"}${data.today_stale ? " · 涨停快照延迟" : ""}${data.today_fetched_at ? ` · ${escapeHTML(data.today_fetched_at.slice(11, 16))} 获取` : ""}`;
-  const message = !profiles.length ? (data.status === "error" ? "股东资料暂未获取成功，稍后自动重试" : data.profiles.length === 2 ? "来源暂无可用股东资料" : "股东资料正在获取，请稍后再查看")
+  const message = !profiles.length && !controls.length ? (data.status === "error" ? "股东资料暂未获取成功，稍后自动重试" : data.profiles.length === 2 ? "来源暂无可用股东资料" : "股东资料正在获取，请稍后再查看")
     : !data.rows.length ? "在已取得资料的股票中，暂未发现共同股东" : !rows.length ? "当前分类下的共同股东已全部屏蔽，可取消勾选后查看关联股票" : "";
-  return `<div class="shareholder-heading"><div class="shareholder-title"><strong>共同股东</strong><button type="button" class="shareholder-info-button" data-shareholder-info aria-label="共同股东说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg></button></div><span class="shareholder-meta">${today}</span></div>
-    <div class="shareholder-filter"><div class="shareholder-filter-heading"><span>屏蔽分类</span><span>${rows.length} 只关联股票</span></div><div class="shareholder-filter-options" role="group" aria-label="屏蔽股东分类">${types.map(type => `<label><input type="checkbox" data-shareholder-block-type="${escapeHTML(type)}"${shareholderTypeBlocked(type) ? " checked" : ""}><span>${escapeHTML(type)}</span></label>`).join("") || '<span class="shareholder-filter-empty">暂无可筛选分类</span>'}</div></div>
-    ${rows.slice(0, limit).map(peer => `<div class="shareholder-peer${peer.today_together ? " together" : ""}"><div class="shareholder-peer-title"><button type="button" class="stock-name-button" data-shareholder-peer="${escapeHTML(peer.code)}" data-peer-name="${escapeHTML(peer.name)}">${escapeHTML(peer.name)}</button><span class="row-stock-code">${escapeHTML(peer.code)}</span>${peer.today_together ? '<span class="shareholder-together">今日同涨停</span>' : ""}<span class="shareholder-count">${peer.shared_count} 位共同股东</span></div><ul>${peer.holders.map(holder => `<li><span>${escapeHTML(holder.name)}</span><small>${escapeHTML(holder.type)} · ${holder.reports.map(r => `${scopes[r.scope]} ${escapeHTML(r.date)}`).join(" / ")}</small></li>`).join("")}</ul></div>`).join("")}
+  const common = `<div class="shareholder-filter"><div class="shareholder-filter-heading"><span>屏蔽分类</span><span>${rows.length} 只关联股票</span></div><div class="shareholder-filter-options" role="group" aria-label="屏蔽股东分类">${types.map(type => `<label><input type="checkbox" data-shareholder-block-type="${escapeHTML(type)}"${shareholderTypeBlocked(type) ? " checked" : ""}><span>${escapeHTML(type)}</span></label>`).join("") || '<span class="shareholder-filter-empty">暂无可筛选分类</span>'}</div></div>
+    ${rows.slice(0, limit).map(peer => `<div class="shareholder-peer${peer.today_together ? " together" : ""}"><div class="shareholder-peer-title"><button type="button" class="stock-name-button" data-shareholder-peer="${escapeHTML(peer.code)}" data-peer-name="${escapeHTML(peer.name)}">${escapeHTML(peer.name)}</button><span class="row-stock-code">${escapeHTML(peer.code)}</span>${peer.today_together ? '<span class="shareholder-together">今日同涨停</span>' : ""}<span class="shareholder-count">${peer.shared_count} ${peer.holders.some(h => h.relations?.length || h.own_relations?.some(r => !scopes[r.kind])) ? "项共同关系" : "位共同股东"}</span></div><ul>${peer.holders.map(holder => `<li><span>${escapeHTML(holder.name)}</span><small>${escapeHTML(holder.type)}${holder.relations?.length || holder.own_relations?.some(r => !scopes[r.kind]) ? ` · 本股：${relationText(holder.own_relations || [])}；对方：${relationText([...(holder.relations || []), ...holder.reports.map(r => ({kind: r.scope}))])}` : ""}${holder.reports.length ? ` · ${holder.reports.map(r => `${scopes[r.scope]} ${escapeHTML(r.date)}`).join(" / ")}` : ""}</small></li>`).join("")}</ul></div>`).join("")}
     ${rows.length > limit ? `<button type="button" class="shareholder-more" data-shareholder-more>继续显示 · 已展示 ${limit} / ${rows.length} 只</button>` : ""}
     ${message ? `<p class="shareholder-message">${message}</p>` : ""}`;
+  let holders = "";
+  if (tab === "holders" || tab === "float") {
+    const scope = tab === "float" ? "float" : "total";
+    const profile = data.profiles.find(p => p.scope === scope), names = data.own_holders?.[scope] || [];
+    const empty = data.status === "error" ? "资料暂未获取成功，稍后自动重试" : profile ? "来源暂无可用资料" : "资料正在获取，请稍后再查看";
+    const disclosed = names.filter(holder => holder.holding_ratio != null);
+    const ratio = disclosed.reduce((sum, holder) => sum + holder.holding_ratio, 0);
+    const summary = scope === "float" && names.length ? `<div class="shareholder-own-summary"><div><span>${disclosed.length === names.length ? "合计持股占比" : "已披露比例合计"}</span><small>${disclosed.length === names.length ? `${names.length} 位股东` : `${disclosed.length} / ${names.length} 位股东已披露`} · 占总流通股本</small></div><strong>${disclosed.length ? `${ratio.toLocaleString("zh-CN", {minimumFractionDigits: 2, maximumFractionDigits: 4})}%` : "暂无数据"}</strong></div>` : "";
+    holders = `<section class="shareholder-own-list"><div class="shareholder-own-heading"><h4>${scope === "total" ? "十大股东" : "十大流通股东"}</h4>${profile?.report_date ? `<span>报告期 ${escapeHTML(profile.report_date)}</span>` : ""}</div>${summary}${names.length ? `<div class="shareholder-own-columns"><span>股东</span><span>${scope === "total" ? "占总股本" : "占总流通股本"}</span></div><ul>${names.map(holder => `<li><div class="shareholder-own-identity"><span>${escapeHTML(holder.name)}</span><small>${escapeHTML(holder.type)}</small></div><strong class="shareholder-own-ratio">${holder.holding_ratio == null ? "未披露" : `${holder.holding_ratio.toLocaleString("zh-CN", {minimumFractionDigits: 2, maximumFractionDigits: 4})}%`}</strong></li>`).join("")}</ul>` : `<p class="shareholder-list-empty">${empty}</p>`}</section>`;
+  }
+  let subsidiaries = "";
+  if (tab === "subsidiaries") {
+    const profile = state.subsidiaryData;
+    subsidiaries = `<div class="shareholder-subsidiaries"><div class="subsidiary-stock"><span>对应股票</span><strong>${escapeHTML(data.name || data.code)}</strong><small>${escapeHTML(data.code)}</small></div><div class="subsidiary-list-heading"><h4>控股子公司</h4>${profile ? `<span>${profile.rows.length} 家</span>` : ""}</div>${profile?.rows.length ? `<ul>${profile.rows.map(company => `<li><div><strong>${escapeHTML(company.name)}</strong><small>${escapeHTML(company.relation)}${company.holding_ratio ? ` · 持股 ${escapeHTML(company.holding_ratio)}` : ""}</small></div><span class="subsidiary-business">${escapeHTML(company.business || "业务暂未披露")}</span></li>`).join("")}</ul>` : `<p class="shareholder-list-empty">${!profile ? "正在读取子公司资料…" : profile.status === "error" ? "子公司资料暂未获取成功，请稍后重新打开查看。" : profile.status === "empty" ? "子公司资料尚未获取。" : "来源暂未披露控股子公司名单。"}</p>`}${profile?.fetched_at ? `<p class="subsidiary-source">${profile.status === "error" ? "更新失败，展示已有资料 · " : ""}${profile.disclosure_date ? `公告 ${escapeHTML(profile.disclosure_date)} · ` : ""}${escapeHTML(profile.fetched_at.slice(0, 16).replace("T", " "))} 获取 · <a href="${escapeHTML(profile.source_url)}" target="_blank" rel="noopener noreferrer">资料来源</a></p>` : ""}</div>`;
+  }
+  return `<div class="shareholder-heading"><div class="shareholder-title"><strong id="shareholder-stock-title">${escapeHTML(data.name || data.code || "股东信息")}</strong><button type="button" class="shareholder-info-button" data-shareholder-info aria-label="共同股东说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg></button></div><span class="shareholder-meta">${today}</span></div>
+    <section class="shareholder-controls" aria-label="本股控股关系"><div class="shareholder-control-columns">${["controller", "actual_controller"].map(kind => `<div><h4>${kinds[kind]}</h4>${controls.some(owner => owner.kind === kind) ? controls.filter(owner => owner.kind === kind).map(owner => `<p>${escapeHTML(owner.name)}</p>`).join("") : `<p class="shareholder-list-empty">${controlEmpty}</p>`}</div>`).join("")}</div>${controls.filter(owner => owner.kind === "parent_owner").map(owner => `<div class="shareholder-parent-owner"><h4>上层股东</h4><p>${escapeHTML(owner.name)}</p>${owner.via_name ? `<small>经 ${escapeHTML(owner.via_name)}</small>` : ""}</div>`).join("")}</section>
+    <div class="shareholder-tabs" role="tablist" aria-label="股东信息">${[["common", "共同股东"], ["float", "十大流通股东"], ["holders", "十大股东"], ["subsidiaries", "子公司"]].map(([key, label]) => `<button type="button" role="tab" id="shareholder-tab-${key}" data-shareholder-tab="${key}" aria-selected="${tab === key}" aria-controls="shareholder-panel" tabindex="${tab === key ? 0 : -1}">${label}</button>`).join("")}</div>
+    <div id="shareholder-panel" role="tabpanel" aria-labelledby="shareholder-tab-${tab}">${tab === "subsidiaries" ? subsidiaries : tab === "holders" || tab === "float" ? holders : common}</div>`;
+}
+
+async function switchShareholderTab(tab) {
+  if (!state.shareholderData || state.shareholderTab === tab) return;
+  state.shareholderTab = tab;
+  state.shareholderPinned = true;
+  const load = tab === "subsidiaries" && !state.subsidiaryData && !state.subsidiaryLoading;
+  if (load) state.subsidiaryLoading = true;
+  const tooltip = $("shareholder-tooltip");
+  tooltip.innerHTML = renderShareholderTooltip(state.shareholderData, state.shareholderLimit);
+  tooltip.scrollTop = 0;
+  tooltip.querySelector(`[data-shareholder-tab="${tab}"]`).focus({preventScroll: true});
+  clearTimeout(state.shareholderTimer);
+  tooltip.style.maxHeight = `${Math.min(460, window.innerHeight - tooltip.getBoundingClientRect().top - 12)}px`;
+  if (load) {
+    const generation = state.shareholderGeneration, code = state.shareholderData.code;
+    let data;
+    try {
+      data = await request(`/api/stock-subsidiaries?${new URLSearchParams({code})}`, "subsidiaries");
+    } catch {
+      data = {status: "error", rows: []};
+    }
+    if (!data || generation !== state.shareholderGeneration) return;
+    state.subsidiaryData = data;
+    state.subsidiaryLoading = false;
+    if (state.shareholderTab === "subsidiaries") {
+      const focused = document.activeElement?.closest("[data-shareholder-tab]")?.dataset.shareholderTab;
+      tooltip.innerHTML = renderShareholderTooltip(state.shareholderData, state.shareholderLimit);
+      if (focused) tooltip.querySelector(`[data-shareholder-tab="${focused}"]`).focus({preventScroll: true});
+    }
+  }
 }
 
 function openShareholderInfo() {
@@ -1798,7 +1861,9 @@ function openShareholderInfo() {
   clearTimeout(state.shareholderTimer);
   state.shareholderPinned = true;
   const profiles = data.profiles.filter(p => p.report_date);
-  $("shareholder-info-content").innerHTML = `<p>${escapeHTML(data.source)} · 已取得 ${data.coverage} / ${data.requested} 只股票${data.status === "updating" ? " · 正在更新" : data.status === "error" ? " · 更新失败，保留已有缓存" : ""}</p>${profiles.length ? `<p>本股资料获取于 ${escapeHTML(profiles.map(p => p.fetched_at).sort()[0].slice(0, 16).replace("T", " "))}</p>` : ""}<p>${escapeHTML(data.scope_note)}</p>`;
+  const owners = data.control_owners || [];
+  const sources = [...new Set(owners.map(owner => owner.source_url))];
+  $("shareholder-info-content").innerHTML = `<p>${escapeHTML(data.source)} · 已取得 ${data.coverage} / ${data.requested} 只股票${data.status === "updating" ? " · 正在更新" : data.status === "error" ? " · 更新失败，保留已有缓存" : ""}</p>${profiles.length ? `<p>本股资料获取于 ${escapeHTML(profiles.map(p => p.fetched_at).sort()[0].slice(0, 16).replace("T", " "))}</p>` : ""}${data.control_status ? `<p>控股资料 · 已取得 ${data.control_coverage} / ${data.requested} 只股票${data.control_status === "updating" ? " · 正在更新" : data.control_status === "error" ? " · 更新失败，保留已有缓存" : ""}${owners.length ? `<br>本股控股资料获取于 ${escapeHTML(owners.map(owner => owner.fetched_at).sort()[0].slice(0, 16).replace("T", " "))}` : ""}</p><p>控股股东、实际控制人来自东方财富公司资料；上层股东仅补充有公开文件依据的关系，目前包含华通集团由青岛市国资委全资持有的关系。资料获取时间不代表控制权变更时间，筹划中的转让不作为已完成关系。</p>${sources.length ? `<p class="shareholder-control-sources">${sources.map((url, i) => `<a href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer">${url.includes("chinamoney.org.cn") ? "华通集团股权来源（第 35 页）" : `公司资料来源${sources.length > 2 ? ` ${i + 1}` : ""}`}</a>`).join(" · ")}</p>` : ""}` : ""}<p>${escapeHTML(data.scope_note)}</p>`;
   $("shareholder-info-dialog").showModal();
 }
 
@@ -4113,6 +4178,8 @@ document.addEventListener("click", event => {
   if (icon) { event.preventDefault(); toggleShareholderTooltip(icon); return; }
   if (event.target.closest("[data-shareholder-info]")) { openShareholderInfo(); return; }
   if (event.target.closest("#shareholder-info-dialog")) return;
+  const tab = event.target.closest("[data-shareholder-tab]");
+  if (tab) { switchShareholderTab(tab.dataset.shareholderTab); return; }
   if (event.target.closest("[data-shareholder-more]") && state.shareholderData) {
     state.shareholderLimit += 50;
     const tooltip = $("shareholder-tooltip"), top = tooltip.scrollTop;
@@ -4146,6 +4213,13 @@ $("shareholder-tooltip").addEventListener("change", event => {
 });
 document.addEventListener("scroll", event => { if (!$("shareholder-tooltip").contains(event.target) && !$("shareholder-info-dialog").contains(event.target)) hideShareholderTooltip(); }, true);
 document.addEventListener("keydown", event => {
+  const tab = event.target.closest("[data-shareholder-tab]");
+  if (tab && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    const tabs = ["common", "float", "holders", "subsidiaries"], index = tabs.indexOf(tab.dataset.shareholderTab);
+    switchShareholderTab(event.key === "Home" ? tabs[0] : event.key === "End" ? tabs.at(-1) : tabs[(index + (event.key === "ArrowLeft" ? tabs.length - 1 : 1)) % tabs.length]);
+    return;
+  }
   if (event.key === "Escape" && $("shareholder-info-dialog").open) {
     event.preventDefault();
     $("shareholder-info-dialog").close();
