@@ -1,5 +1,5 @@
 {
-  "id": "351510cc559396e4",
+  "id": "1fd064555f39648f",
   "runtime": "vendor/python-3.13.16-embed-amd64.zip",
   "wheels": [
     "vendor/wheels/certifi-2026.7.22-py3-none-any.whl",
@@ -36,7 +36,7 @@
     "desktop.py": "fe19f9b9dd0c6355bb65d3f025059144a3fe57e63880b27a369a364e5112e59d",
     "import_manual.py": "f7ad15f1d39c0c2c6adff769a987290594c5f9348c770aa61b571e6f75635c77",
     "industry.py": "cdb1dda2a1d216326756762de99bed3cb9449c2caa6ac3b46f7476666d6f462b",
-    "install-online-macos.sh": "046837cb9196b6671dc455c7125fba0b6ca61cce830ac02aefa8d23bf2cd6265",
+    "install-online-macos.sh": "10334e9c8c7bc0a4653b0c8aa50221d53fc3c1da9110de9be3d09b8e123e2aa9",
     "install.cmd": "c50ae59fa210f283a10c9ecfab95510b4d5edf1132104cff0720cfc732e7c9e0",
     "intraday.py": "7f979394801d999bcc3fd38376329acfc88d9fe15afbe194ed983761f02f40ef",
     "intraday_sources.py": "384a7fb2d693cb4e198e996afb294b4c6e381ad5a39e2f8323d15b8233952559",
@@ -48,7 +48,7 @@
     "live_update.py": "3919c186178b561f311b022aff28a6a9a9f52b062ebaede1a3900d0383d14b69",
     "macos-runtimes.json": "3d9eb23d5703159e1bfde08ee6acd774bf0e0a87134624920c4d3d587bd184c5",
     "macos_upgrade.py": "72781fdcc7572db2ce5d484e1d76784ccc200ae6a4dccfcae72ea85faa7f5221",
-    "personal_data.py": "e466182b2a83b181d5f679e1618d732a3d992b91bfd56c55dfe52d0f778c9381",
+    "personal_data.py": "03ebefeaf4bdc5584d843ba434f37982c763ea16a87c366669f6f862a662edb0",
     "provider.py": "2cc252de4124888f681d7c178049ed9382d475ccafb6f0195dcfef35c781a822",
     "provinces.py": "e3fc2108bd9ddea86f3c081a40cfc524ed58b1cdfd07a308d5e857348757b02c",
     "published_tags.py": "01a1ab3efd655a69567cc48304badbf3d805df01ff4fad8a45ac70b1bd1b7db6",

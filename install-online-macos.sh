@@ -16,7 +16,7 @@ printf '%s\n' lianban-archive-desktop-macos > "$base/managed-project.txt"
 work="$(mktemp -d "$base/downloads/install.XXXXXX")"
 repo=https://github.com/x107108/lianban-archive-desktop
 curl --fail --location --retry 2 --proto '=https' --tlsv1.2 "$repo/releases/latest/download/SHA256SUMS.txt" -o "$work/SHA256SUMS.txt"
-line="$(grep -E "^[a-fA-F0-9]{64}  lianban-archive-desktop-v20[0-9]{2}\.[0-9]{2}\.[0-9]{2}(\.[0-9]+)?-macos-${arch}\.tar\.gz$" "$work/SHA256SUMS.txt")"
+line="$(grep -E "^[a-fA-F0-9]{64}  lianban-archive-desktop-v20[0-9]{2}\.[0-9]{2}\.[0-9]{2}(\.[0-9]+)?-macos-${arch}\.tar\.gz$" "$work/SHA256SUMS.txt" || true)"
 if [ "$(printf '%s\n' "$line" | wc -l | tr -d ' ')" != 1 ]; then echo '当前正式版本没有对应 Mac 安装包。'; exit 1; fi
 hash="${line%%  *}"
 name="${line#*  }"

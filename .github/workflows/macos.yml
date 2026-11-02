@@ -34,6 +34,8 @@ jobs:
           root="$PWD/.build/全新 Mac 验收/lianban-archive-desktop"
           "$root/.runtime/macos/python/bin/python3" -m unittest discover -s tests -p test_personal_data.py
           "$root/.runtime/macos/python/bin/python3" -m unittest discover -s tests -p test_shareholder_seed.py
+      - name: Real data-preserving upgrade and failed-start recovery
+        run: python tools/verify_macos_upgrade.py '.build/全新 Mac 验收/lianban-archive-desktop'
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}

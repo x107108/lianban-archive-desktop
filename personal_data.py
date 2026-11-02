@@ -23,7 +23,8 @@ def validate(data):
     def labels(values):
         if not isinstance(values, list) or len(values) > 100:
             raise ValueError('文件中的标签数量无效。')
-        return list({label(v).casefold(): label(v) for v in values}.values())
+        clean = [label(v) for v in values]
+        return list({v.casefold(): v for v in clean}.values())
     def stamp(value):
         if not isinstance(value, str) or len(value) > 40:
             raise ValueError('文件中的备注时间无效。')
