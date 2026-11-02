@@ -4,6 +4,8 @@ web/** -text
 *.ps1 -text
 *.cmd -text
 *.sh text eol=lf
+*.command text eol=lf
+*.yml text eol=lf
 *.zip binary
 *.whl binary
 *.gz binary

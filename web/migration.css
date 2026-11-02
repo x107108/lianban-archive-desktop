@@ -1,0 +1,9 @@
+.migration-dialog { width: min(560px, calc(100vw - 32px)); padding: 28px; border: 1px solid #dedbd3; border-radius: 16px; background: #fcfbf7; color: #343932; box-shadow: 0 20px 80px #20282026; }
+.migration-dialog::backdrop { background: #18221b66; }
+.migration-dialog h2 { margin: 0 0 16px; font-size: 21px; }
+.migration-dialog p { font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
+.migration-dialog input { max-width: 100%; margin: 12px 0; }
+.migration-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 20px; }
+.migration-actions a { font-size: 13px; color: #556c50; }
+.migration-status { min-height: 24px; }
+@media (max-width: 600px) { .topbar-right { flex-wrap: wrap; gap: 8px; } #personal-data-button { font-size: 12px; } }

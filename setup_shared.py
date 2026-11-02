@@ -6,6 +6,7 @@ import importlib.metadata
 import json
 import sqlite3
 import sys
+import sysconfig
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
@@ -35,7 +36,8 @@ def wheel_target(name, destination):
         if len(parts) < 3 or parts[1] not in ('purelib', 'platlib', 'scripts', 'data', 'headers'):
             raise ValueError('Unsupported wheel data entry: ' + name)
         if parts[1] in ('scripts', 'data', 'headers'):
-            base = destination.parents[1] / {'scripts':'Scripts','data':'share','headers':'Include'}[parts[1]]
+            base = (destination.parents[1] / {'scripts':'Scripts','data':'share','headers':'Include'}[parts[1]]
+                    if sys.platform == 'win32' else Path(sys.prefix) / {'scripts':'bin','data':'share','headers':'include'}[parts[1]])
         parts = parts[2:]
     result = base.joinpath(*parts).resolve()
     if not result.is_relative_to(base.resolve()):
@@ -44,7 +46,8 @@ def wheel_target(name, destination):
 
 def install():
     bundle = verify()
-    destination = Path(sys.executable).parent/'Lib/site-packages'
+    destination = (Path(sys.executable).parent/'Lib/site-packages' if sys.platform == 'win32'
+                   else Path(sysconfig.get_paths()['purelib']))
     destination.mkdir(parents=True, exist_ok=True)
     for name in bundle['wheels']:
         with zipfile.ZipFile(ROOT/name) as archive:

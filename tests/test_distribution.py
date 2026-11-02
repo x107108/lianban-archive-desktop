@@ -13,7 +13,7 @@ class DistributionTests(unittest.TestCase):
         baseline=json.loads((ROOT/'SOURCE_BASELINE.json').read_text(encoding='utf-8'))
         actual={str(p.relative_to(ROOT)).replace('\\','/') for p in (ROOT/'web').rglob('*') if p.is_file()}
         expected={n for n in baseline['identity_sha256'] if n.startswith('web/')}
-        self.assertEqual(actual,expected | {'web/updates.js', 'web/updates.css', 'web/realtime.js'})
+        self.assertEqual(actual,expected | {'web/updates.js', 'web/updates.css', 'web/realtime.js', 'web/migration.js', 'web/migration.css'})
         for name,digest in baseline['identity_sha256'].items():
             self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),digest,name)
 

@@ -7,3 +7,6 @@
 - 历史事实数据、行业及省份等字段：来源与边界由程序和页面“说明”列出，个人设置及原始来源响应不在初始档案中。
 
 第三方名称与许可不表示其作者对本项目的推荐、背书或数据准确性保证。
+# Mac 运行环境补充（2026.11.03）
+
+Mac 完整安装包另附 Astral 维护的 [Python Standalone Builds](https://github.com/astral-sh/python-build-standalone)，固定来源和 SHA-256 见 `macos-runtimes.json`。它包含 CPython 和其构建所需组件；原有许可随运行环境一并提供，解压后保留，不改变本项目代码或既有依赖的许可。

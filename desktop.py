@@ -36,15 +36,18 @@ def serve(port, no_updates=False):
     class DesktopHandler(original_handler):
         def send_head(self):
             path = urlsplit(self.path).path
-            if path in ('/', '/index.html', '/updates.js', '/updates.css'):
+            if path in ('/', '/index.html', '/updates.js', '/updates.css', '/migration.js', '/migration.css'):
                 filename = 'index.html' if path in ('/', '/index.html') else path[1:]
                 raw = (ROOT/'web'/filename).read_bytes()
                 if filename == 'index.html':
                     extension = ('<link rel="stylesheet" href="/updates.css?v=' + version + '">'
-                                 '<script src="/updates.js?v=' + version + '" defer></script>')
+                                 '<script src="/updates.js?v=' + version + '" defer></script>'
+                                 '<link rel="stylesheet" href="/migration.css?v=' + version + '">'
+                                 '<script src="/migration.js?v=' + version + '" defer></script>')
                     raw = raw.replace(b'</head>', extension.encode('utf-8') + b'</head>', 1)
                 content_type = {'index.html':'text/html', 'updates.js':'text/javascript',
-                                'updates.css':'text/css', 'realtime.js':'text/javascript'}[filename]
+                                'updates.css':'text/css', 'realtime.js':'text/javascript',
+                                'migration.js':'text/javascript', 'migration.css':'text/css'}[filename]
                 self.send_response(200)
                 self.send_header('Content-Type', content_type + '; charset=utf-8')
                 self.send_header('Content-Length', str(len(raw)))
@@ -58,11 +61,28 @@ def serve(port, no_updates=False):
                 return self.reply(notices.snapshot(force=parsed.query == 'check=1'))
             if parsed.path == '/__desktop__/status':
                 return self.reply({k:v for k,v in session.items() if k!='token'})
-            if parsed.path in ('/updates.js', '/updates.css', '/realtime.js'):
+            if parsed.path in ('/updates.js', '/updates.css', '/realtime.js', '/migration.js', '/migration.css'):
                 return SimpleHTTPRequestHandler.do_GET(self)
             return super().do_GET()
 
         def do_POST(self):
+            if urlsplit(self.path).path in ('/__desktop__/personal-data/preview', '/__desktop__/personal-data/import'):
+                import personal_data
+                if self.headers.get('Content-Type', '').split(';')[0].strip() != 'application/json':
+                    return self.reply({'error': '请选择 JSON 迁移文件。'}, 415)
+                origin = self.headers.get('Origin')
+                if origin and origin != 'http://' + self.headers.get('Host', ''):
+                    return self.reply({'error': '请在本共享版页面操作。'}, 403)
+                try:
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 0 < length <= personal_data.MAX_BYTES:
+                        return self.reply({'error': '迁移文件不能超过 20 MB。'}, 413)
+                    data = personal_data.validate(json.loads(self.rfile.read(length)))
+                    if self.path.endswith('/preview'):
+                        return self.reply(personal_data.summary(data))
+                    return self.reply(personal_data.import_data(ROOT/'data/archive.sqlite3', data))
+                except (ValueError, TypeError, KeyError, OverflowError) as exc:
+                    return self.reply({'error': str(exc) or '迁移文件格式无效。'}, 400)
             if urlsplit(self.path).path == '/__desktop__/shutdown':
                 supplied = self.headers.get('X-Desktop-Token', '')
                 if not hmac.compare_digest(supplied, session['token']):

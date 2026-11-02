@@ -1,0 +1,42 @@
+name: Mac installation acceptance
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['updates/latest.json', '*.md', 'deploy/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Build self-contained release
+        run: python tools/build_macos.py '${{ matrix.arch }}'
+      - name: Install and verify a fresh copy with Chinese and space in path
+        run: |
+          mkdir -p '.build/全新 Mac 验收'
+          tar -xzf .build/macos/lianban-archive-desktop-*-macos-${{ matrix.arch }}.tar.gz -C '.build/全新 Mac 验收'
+          python tools/verify_macos.py '.build/全新 Mac 验收/lianban-archive-desktop'
+      - name: Personal data and distribution tests with installed runtime
+        run: |
+          root="$PWD/.build/全新 Mac 验收/lianban-archive-desktop"
+          "$root/.runtime/macos/python/bin/python3" -m unittest discover -s tests -p test_personal_data.py
+          "$root/.runtime/macos/python/bin/python3" -m unittest discover -s tests -p test_shareholder_seed.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: |
+            .build/macos/lianban-archive-desktop-*.tar.gz
+            .build/macos/lianban-archive-desktop-*.sha256

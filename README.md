@@ -6,6 +6,8 @@
 
 ## 简易安装教程
 
+Mac 用户请使用 [Mac 安装与迁移说明](MACOS.md)：Apple 芯片与 Intel 分包，随包提供运行环境。新版共享版还提供右上角“导入个人数据”，可接收香港线上网站“迁移到共享版”导出的标签、标签层级、备注历史和黑名单；导入前备份，合并保留已有记录。当前新增功能的安装版号为 `2026.11.03`，正式下载以 Release 实际公开状态为准。
+
 支持 **Windows 10/11 x64**，电脑需能访问 GitHub。无需预装 Python、Git，也无需 GitHub 账号。下面两种方式任选一种即可。
 
 ### 方式一：交给 AI Agent
@@ -110,7 +112,7 @@ Git 用户可在停止本项目后执行 `git pull --ff-only`，再运行 `insta
 
 ## 其他系统与开发
 
-捆绑的一键安装仅用于 Windows x64。macOS/Linux 开发者可使用 Python 3.10+，创建虚拟环境并安装 `requirements.txt`；将 `resources/archive-seed.sqlite3.gz` 解压到 `data/archive.sqlite3` 后运行 `python app.py`。这些系统不属于本次 Windows 一键安装的验收范围。
+Windows x64 继续使用原一键安装入口；macOS 使用 [Mac 专用完整包及入口](MACOS.md)。不要在 Mac 运行 Windows 的 `.cmd` 或内置 `python.exe`。Linux 仍属开发者手动安装范围；共享版应通过 `desktop.py serve` 启动，保留发布标签、股东缓存、站内信及每份安装的启停管理。
 
 测试需要开发环境中的 Python，以及用于前端逻辑测试的 Node.js；普通使用者不需要 Node.js。首次发布的安装及功能验收结果见 [VALIDATION.md](VALIDATION.md)。
 
