@@ -21,7 +21,7 @@ function $(id){
 const hierarchy=[{name:'机器人',parent:''},{name:'电机',parent:'机器人'},{name:'驱动<&>',parent:'电机'}];
 const context=vm.createContext({$,URLSearchParams,window:view,state:{tab:'date',requests:{},meta:{tag_hierarchy:hierarchy},
   tagDraft:['机器人','驱动<&>'],tagEditorData:{code:'000678',revision:2,source_tags:['驱动<&>']},tagUseSource:false},
-  canEditTags:()=>true,canEditBlacklist:()=>true,clearError(){},
+  canEditTags:()=>true,canEditBlacklist:()=>true,clearError(){},loadShareholderAlerts(){},
   getDateQuery:()=>new URLSearchParams({date:'2026-10-28'}),
   setView(){throw new Error('quiet refresh must not switch/reset the view');},
   loadingHTML(){throw new Error('quiet refresh must not replace the matrix with loading content');},

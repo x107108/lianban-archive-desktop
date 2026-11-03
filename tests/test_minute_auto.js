@@ -21,7 +21,7 @@ function harness({beforePost, freshPrimary = true, editable = true} = {}) {
       return {...detail(code), needs_refresh: code !== codes[0] || !freshPrimary};
     },
     loadMinuteTimeline: async options => {assert.equal(options.quiet, true); context.state.minuteTimelineData = {date: day, pool: [...codes, codes[2]].map(code => ({code}))};},
-    updateMinuteDateNavigation() {}, renderMinuteList() {$("minute-stock-list").scrollTop = 0;}, renderMinuteCompareList() {$("minute-compare-list").scrollTop = 0;},
+    updateMinuteDateNavigation() {}, renderMinuteList() {$("minute-stock-list").scrollTop = 0;},
     recordMinuteData(data) {records.push(data.stock.code);}, renderMinuteStockData() {renders++;},
     showMinutePoint(index) {positions.push(index);}, showMinuteAuctionPoint() {}, refreshMinuteComparisonChart() {},
     updateMinuteTimelineControls() {context.updateMinuteTimelineLiveStatus();}
@@ -42,7 +42,6 @@ function harness({beforePost, freshPrimary = true, editable = true} = {}) {
   assert.equal(h.context.state.minuteTimelineLiveStatus.failed, 0, "normal partial intraday data is successful, not an error");
   assert.deepEqual(h.positions, [7], "chart observation time is preserved");
   assert.equal(h.$("minute-stock-list").scrollTop, 123);
-  assert.equal(h.$("minute-compare-list").scrollTop, 456);
   assert.match(h.$("minute-timeline-live-status").textContent, /每分钟自动获取.*13:21:00/);
   await h.context.refreshVisibleMinuteData();
   assert.equal(h.gets.length, 8, "a completed cycle is not started again within one minute");

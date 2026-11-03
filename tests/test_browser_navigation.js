@@ -32,7 +32,7 @@ const context = vm.createContext({
   },
   document: {documentElement: {classList: {toggle() {}}}},
   window: {addEventListener(type, listener) {listeners.set(type, listener);}},
-  hideSuggestions() {}, hideBlacklistSuggestions() {}, clearError() {}, setStats() {},
+  hideSuggestions() {}, hideBlacklistSuggestions() {}, clearError() {}, setStats() {}, loadShareholderAlerts() {},
   renderBoardOptions() {}, updateDateNavigation() {}, renderStockProfile() {},
   async loadIntraday() {context.state.intradayRestored = [...context.state.minuteCompareCodes];},
   async loadTagManager() {context.setView("tags"); context.state.restoredTag = context.state.tagManagerName;},

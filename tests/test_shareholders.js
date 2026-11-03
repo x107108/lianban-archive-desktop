@@ -1,18 +1,19 @@
 const assert = require("node:assert/strict"), fs = require("node:fs"), vm = require("node:vm");
 const source = fs.readFileSync(require("node:path").join(__dirname,"../web/app.js"),"utf8");
-const tooltip = {hidden:true,innerHTML:"",style:{},getBoundingClientRect:()=>({width:530,height:400,top:12}),querySelector:()=>({focus(){}})};
+const tooltip = {hidden:true,innerHTML:"",style:{},getBoundingClientRect:()=>({width:530,height:400,top:12}),querySelector:()=>({focus(){}}),querySelectorAll:()=>[]};
 const infoDialog={open:false,showModal(){this.open=true;},close(){this.open=false;}};
 const infoContent={innerHTML:""};
 const pending=[];
-const context=vm.createContext({$:id=>id==="shareholder-info-dialog"?infoDialog:id==="shareholder-info-content"?infoContent:tooltip,state:{requests:{}},URLSearchParams,setTimeout,clearTimeout,
+const tradeDate={value:"2026-10-29"};
+const context=vm.createContext({$:id=>id==="trade-date"?tradeDate:id==="shareholder-info-dialog"?infoDialog:id==="shareholder-info-content"?infoContent:tooltip,state:{requests:{}},URLSearchParams,setTimeout,clearTimeout,
   document:{},window:{innerWidth:1200,innerHeight:800},request:(url)=>new Promise((resolve,reject)=>pending.push({url,resolve,reject}))});
 vm.runInContext(source.slice(source.indexOf("function escapeHTML"),source.indexOf("function textValue")),context);
 vm.runInContext(source.slice(source.indexOf("function hideShareholderTooltip"),source.indexOf("function hideStockNoteTooltip")),context);
 vm.runInContext(source.slice(source.indexOf("function shareholderHasAlert"),source.indexOf("function renderStockCard")),context);
 const data={code:"000001",name:"本股<&名称",total:1,profiles:[{scope:"total",report_date:"2026-09-30",fetched_at:"2026-10-29T08:00:00+08:00"},{scope:"float",report_date:"2026-06-30",fetched_at:"2026-10-29T08:00:00+08:00"}],
   own_holders:{total:[{name:"本股机构<&",type:"其他",report_date:"2026-09-30",holding_ratio:46.74}],float:[{name:"香港中央结算有限公司",type:"香港中央结算有限公司",report_date:"2026-06-30",holding_ratio:21.110242096267}]},
-  today:"2026-10-29",today_status:"provisional",today_fetched_at:"2026-10-29T10:30:00+08:00",today_stale:true,
-  rows:[{code:"000002",name:"关联<&股票",today_together:true,shared_count:1,holders:[{name:"共同<script>机构",type:"投资公司",reports:[{scope:"float",date:"2026-09-30"}]}]}],
+  date:"2026-10-29",date_status:"provisional",date_fetched_at:"2026-10-29T10:30:00+08:00",date_stale:true,
+  rows:[{code:"000002",name:"关联<&股票",same_day_limit_up:true,shared_count:1,holders:[{name:"共同<script>机构",type:"投资公司",reports:[{scope:"float",date:"2026-09-30"}]}]}],
   coverage:2,requested:5,status:"updating",source:"公开源",scope_note:"按完整名称匹配"};
 function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,attributes:{},
   setAttribute(k,v){this.attributes[k]=v},removeAttribute(k){delete this.attributes[k]},getBoundingClientRect:()=>({left:1100,top:700,bottom:724})};}
@@ -21,10 +22,10 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   const first=context.showShareholderTooltip(a);
   await context.showShareholderTooltip(a);
   assert.equal(pending.length,1);
-  assert.equal(pending[0].url,"/api/stock-shareholders?code=000001");
+  assert.equal(pending[0].url,"/api/stock-shareholders?code=000001&date=2026-10-29");
   assert.equal(tooltip.hidden,false);
   pending[0].resolve(data);await first;
-  assert.ok(tooltip.innerHTML.includes("今日同涨停")&&tooltip.innerHTML.includes("盘中暂定")&&tooltip.innerHTML.includes("涨停快照延迟"));
+  assert.ok(tooltip.innerHTML.includes("当日同涨停")&&tooltip.innerHTML.includes("盘中暂定")&&tooltip.innerHTML.includes("涨停快照延迟"));
   assert.ok(tooltip.innerHTML.includes("共同&lt;script&gt;机构")&&!tooltip.innerHTML.includes("<script>"));
   assert.ok(tooltip.innerHTML.includes("关联&lt;&amp;股票")&&tooltip.innerHTML.includes("十大流通 2026-09-30"));
   assert.ok(parseFloat(tooltip.style.left)+530<=1188);
@@ -55,7 +56,7 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   context.hideShareholderTooltip();
   const failed=context.showShareholderTooltip(a);pending[4].reject(new Error("private detail"));await failed;
   assert.ok(tooltip.innerHTML.includes("暂时无法读取")&&!tooltip.innerHTML.includes("private detail"));
-  const empty=context.renderShareholderTooltip({...data,profiles:[],rows:[],total:0,status:"error",today_status:"unavailable"});
+  const empty=context.renderShareholderTooltip({...data,profiles:[],rows:[],total:0,status:"error",date_status:"unavailable"});
   assert.ok(empty.includes("暂未获取成功")&&empty.includes("暂不标记同涨停"));
   const absent=context.renderShareholderTooltip({...data,profiles:[{scope:"total",report_date:null},{scope:"float",report_date:null}],rows:[],total:0,status:"current"});
   assert.ok(absent.includes("来源暂无可用股东资料"));
@@ -71,12 +72,12 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
     control_owners:[{kind:"controller",name:"华通<&集团",type:"控股机构",via_name:"",source_url:"https://example.com/company",fetched_at:"2026-10-30T08:00:00+08:00"},
       {kind:"actual_controller",name:"华通<&集团",type:"控股机构",via_name:"",source_url:"https://example.com/company",fetched_at:"2026-10-30T08:00:00+08:00"},
       {kind:"parent_owner",name:"青岛国资委",type:"国资",via_name:"华通<&集团",source_url:"https://www.chinamoney.org.cn/source",fetched_at:"2026-10-30T08:00:00+08:00"}],
-    rows:[{code:"600600",name:"关联企业",today_together:true,shared_count:1,holders:[{name:"青岛国资委",type:"国资",reports:[],relations:[{kind:"actual_controller"}],own_relations:[{kind:"parent_owner"}]}]}]};
+    rows:[{code:"600600",name:"关联企业",same_day_limit_up:true,shared_count:1,holders:[{name:"青岛国资委",type:"国资",reports:[],relations:[{kind:"actual_controller"}],own_relations:[{kind:"parent_owner"}]}]}]};
   const controlHTML=context.renderShareholderTooltip(controlled);
   assert.ok(controlHTML.includes('class="shareholder-control-columns"')&&controlHTML.includes('<h4>控股股东</h4>')&&controlHTML.includes('<h4>实际控制人</h4>'),"control and actual-control roles have separate columns");
   assert.ok(controlHTML.includes("经 华通&lt;&amp;集团")&&!controlHTML.includes("华通<&集团"));
   assert.ok(controlHTML.includes("本股：上层股东；对方：实际控制人")&&controlHTML.includes("1 项共同关系"));
-  assert.ok(controlHTML.includes('data-shareholder-block-type="国资">'),"new state-owner category defaults to visible");
+  assert.ok(controlHTML.includes('data-shareholder-block-group="state" aria-checked="false"'),"state owners have a visible grouped filter");
   context.state.shareholderAlertTypes=new Map([["001219",["国资"]]]);
   assert.equal(context.shareholderHasAlert("001219"),true);
   context.state.shareholderBlockedTypes.set("国资",true);
@@ -117,9 +118,9 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   assert.ok(summary([null]).includes("暂无数据")&&!summary([null]).includes("0.00%"),"unknown ratios cannot become a zero total");
   assert.ok(summary([0]).includes("0.00%")&&summary([0]).includes("合计持股占比"));
   assert.equal(summary([]),"","an absent list has no misleading total");
-  assert.ok(!tooltip.innerHTML.includes('data-shareholder-block-type=')&&!tooltip.innerHTML.includes('data-shareholder-peer='),"the own-list tab does not render peer filters or matches");
+  assert.ok(!tooltip.innerHTML.includes('data-shareholder-block-group=')&&!tooltip.innerHTML.includes('data-shareholder-peer='),"the own-list tab does not render peer filters or matches");
   context.switchShareholderTab("common");
-  assert.ok(tooltip.innerHTML.includes('data-shareholder-block-type="国资"')&&!tooltip.innerHTML.includes('class="shareholder-own-list"'));
+  assert.ok(tooltip.innerHTML.includes('data-shareholder-block-group="state"')&&!tooltip.innerHTML.includes('class="shareholder-own-list"'));
   context.state.shareholderTab="holders";
   const emptyLists=context.renderShareholderTooltip({...data,own_holders:{total:[],float:[]},profiles:[{scope:"total",report_date:null}]});
   assert.ok(emptyLists.includes("来源暂无可用资料")&&!emptyLists.includes("资料正在获取"));
@@ -137,7 +138,7 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   await subsidiaries;
   assert.ok(tooltip.innerHTML.includes("生产&lt;&amp;公司")&&tooltip.innerHTML.includes("食品&lt;script&gt;生产")&&!tooltip.innerHTML.includes("<script>"));
   assert.ok(tooltip.innerHTML.includes("2 家")&&tooltip.innerHTML.includes("持股 51%")&&tooltip.innerHTML.includes("业务暂未披露")&&tooltip.innerHTML.includes("公告 2026-08-21"));
-  assert.ok(!tooltip.innerHTML.includes("data-tag")&&!tooltip.innerHTML.includes("data-shareholder-block-type="),"business text is independent of tag management and holder filters");
+  assert.ok(!tooltip.innerHTML.includes("data-tag")&&!tooltip.innerHTML.includes("data-shareholder-block-group="),"business text is independent of tag management and holder filters");
   context.switchShareholderTab("holders");await context.switchShareholderTab("subsidiaries");
   assert.equal(pending.at(-1),subsidiaryRead,"loaded subsidiaries are reused within the popup");
   context.hideShareholderTooltip();
@@ -183,18 +184,19 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   assert.equal(tooltip.hidden,true,"unfixed hover previews retain their auto-dismiss behavior");
   const holder = (name,type) => ({name,type,reports:[{scope:"total",date:"2026-09-30"}]});
   const categories={...data,total:4,rows:[
-    {code:"000010",name:"仅机构",today_together:true,holders:[holder("机构一","基金"),holder("机构二","QFII")]},
-    {code:"000011",name:"混合持有",today_together:false,holders:[holder("个人一","个人"),holder("机构二","QFII")]},
-    {code:"000012",name:"多名个人",today_together:false,holders:[holder("个人一","个人"),holder("个人二","个人")]},
-    {code:"000013",name:"今日个人",today_together:true,holders:[holder("个人二","个人")]}
+    {code:"000010",name:"仅机构",same_day_limit_up:true,holders:[holder("机构一","基金"),holder("机构二","QFII")]},
+    {code:"000011",name:"混合持有",same_day_limit_up:false,holders:[holder("个人一","个人"),holder("机构二","QFII")]},
+    {code:"000012",name:"多名个人",same_day_limit_up:false,holders:[holder("个人一","个人"),holder("个人二","个人")]},
+    {code:"000013",name:"今日个人",same_day_limit_up:true,holders:[holder("个人二","个人")]}
   ]};
   let filtered=context.filteredShareholderRows(categories);
   assert.equal(filtered.map(p=>p.code).join(","),"000013,000012,000011","filter first, then prioritize today's peers and recompute counts");
   assert.equal(filtered[2].shared_count,1);
   assert.equal(categories.rows[1].holders.length,2,"filtering does not modify source data");
   const categoryHTML=context.renderShareholderTooltip(categories);
-  assert.ok(categoryHTML.includes('data-shareholder-block-type="基金" checked')&&categoryHTML.includes('data-shareholder-block-type="QFII" checked'));
-  assert.ok(categoryHTML.includes('data-shareholder-block-type="个人">'));
+  assert.equal((categoryHTML.match(/data-shareholder-block-group=/g)||[]).length,5,"detailed categories share five filter options");
+  assert.ok(categoryHTML.includes('data-shareholder-block-group="finance" aria-checked="mixed"'),"existing fund/QFII-only defaults remain a partial financial group");
+  assert.ok(categoryHTML.includes('data-shareholder-block-group="person" aria-checked="false"'));
   assert.ok(categoryHTML.includes("3 只关联股票")&&!categoryHTML.includes('data-shareholder-peer="000010"'));
   const heading=categoryHTML.slice(0,categoryHTML.indexOf('<section class="shareholder-controls"'));
   assert.ok(heading.includes("本股&lt;&amp;名称")&&heading.includes("2026-10-29")&&!heading.includes("十大股东")&&!heading.includes("<br>"));
@@ -218,8 +220,8 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   assert.equal(context.shareholderTypeBlocked("香港中央结算有限公司"),true,"the first split retains the previous Other preference");
   context.state.shareholderBlockedTypes.set("其他",false);
   assert.equal(context.shareholderTypeBlocked("香港中央结算有限公司"),true,"the dedicated block becomes independent from Other");
-  const clearing={...data,rows:[{code:"000020",name:"结算关联",today_together:true,holders:[holder("香港中央结算有限公司","香港中央结算有限公司")]},
-    {code:"000021",name:"其他关联",today_together:true,holders:[holder("普通机构","其他")]}]};
+  const clearing={...data,rows:[{code:"000020",name:"结算关联",same_day_limit_up:true,holders:[holder("香港中央结算有限公司","香港中央结算有限公司")]},
+    {code:"000021",name:"其他关联",same_day_limit_up:true,holders:[holder("普通机构","其他")]}]};
   context.state.shareholderAlertTypes=new Map([["000020",["香港中央结算有限公司"]],["000021",["其他"]]]);
   assert.equal(context.filteredShareholderRows(clearing).map(p=>p.code).join(","),"000021");
   assert.equal(context.shareholderHasAlert("000020"),false);
@@ -254,5 +256,82 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   assert.ok(buttons.every(button=>!button.classList["has-shareholder-alert"]),"a refreshed pool without co-limit-up matches removes old dots");
   assert.ok(buttons.every(button=>button.attributes["aria-description"]===undefined));
   context.hideShareholderTooltip();
+  context.state.shareholderBlockedTypes=new Map();
+  const firstDate=context.loadShareholderAlerts();
+  const firstDateRequest=pending.at(-1);
+  assert.equal(firstDateRequest.url,"/api/shareholder-alerts?date=2026-10-29");
+  firstDateRequest.resolve({date:tradeDate.value,rows:[{code:"000011",types:["个人"]}]});await firstDate;
+  assert.equal(buttons[1].classList["has-shareholder-alert"],true);
+  const failedRefresh=context.loadShareholderAlerts();pending.at(-1).reject(Error("offline"));await failedRefresh;
+  assert.equal(buttons[1].classList["has-shareholder-alert"],true,"a same-date refresh failure keeps the last result");
+  const oldDate=context.loadShareholderAlerts(),oldDateRequest=pending.at(-1);
+  tradeDate.value="2026-10-30";
+  const newDate=context.loadShareholderAlerts(),newDateRequest=pending.at(-1);
+  assert.ok(buttons.every(button=>!button.classList["has-shareholder-alert"]),"changing the query date clears the previous date's dots immediately");
+  newDateRequest.resolve({date:"2026-10-30",rows:[]});await newDate;
+  oldDateRequest.resolve({date:"2026-10-29",rows:[{code:"000011",types:["个人"]}]});await oldDate;
+  assert.ok(buttons.every(button=>!button.classList["has-shareholder-alert"]),"late results from the previous date cannot restore old dots");
+  const oldPopup=context.showShareholderTooltip(a),oldPopupRequest=pending.at(-1);
+  assert.ok(oldPopupRequest.url.endsWith("date=2026-10-30"));
+  tradeDate.value="2026-11-02";oldPopupRequest.resolve(data);await oldPopup;
+  assert.equal(context.state.shareholderData,null,"a late popup response cannot mix dates");
+  context.hideShareholderTooltip();
+  let savedGroups=JSON.stringify([["其他",true],["基金",false],["QFII",true],["国资",false],["国家队",true],["香港中央结算有限公司",false]]);
+  context.localStorage={getItem:()=>savedGroups,setItem(key,value){assert.equal(key,"limit-up-archive.shareholder-blocked-types.v1");savedGroups=value;}};
+  delete context.state.shareholderBlockedTypes;
+  assert.equal(context.shareholderTypeBlocked("企业股东"),true,"new corporate types inherit the previous Other setting");
+  assert.equal(context.shareholderTypeBlocked("AMC"),true,"new AMC types also inherit Other rather than silently becoming visible");
+  assert.equal(context.shareholderTypeBlocked("香港中央结算有限公司"),false,"existing clearing preferences remain independent");
+  assert.equal(context.shareholderTypeBlocked("中央汇金"),true,"Huijin inherits the previous state-team choice");
+  context.state.shareholderData={...data,rows:[
+    {code:"000010",name:"企业关联",same_day_limit_up:true,holders:[holder("某企业","企业股东")]},
+    {code:"000011",name:"AMC关联",same_day_limit_up:true,holders:[holder("长城资产","AMC")]}]};
+  context.state.shareholderAlertTypes=new Map([["000010",["企业股东"]],["000011",["AMC"]]]);
+  context.syncShareholderAlertIcons();
+  assert.equal(buttons[0].classList["has-shareholder-alert"],false);
+  assert.equal(buttons[1].classList["has-shareholder-alert"],false);
+  const groupsHTML=context.renderShareholderTooltip(context.state.shareholderData);
+  assert.equal((groupsHTML.match(/data-shareholder-block-group=/g)||[]).length,5);
+  assert.ok(groupsHTML.includes('data-shareholder-block-group="finance" aria-checked="mixed"'));
+  assert.ok(groupsHTML.includes('data-shareholder-block-group="state" aria-checked="mixed"'),"opposing legacy choices are preserved, including state/state-team preferences");
+  assert.ok(groupsHTML.includes('data-shareholder-block-group="clearing" aria-checked="mixed"')&&groupsHTML.includes('中央汇金及香港结算'),"Huijin and clearing share one mixed option while old choices differ");
+  const groupListeners=new Map();tooltip.addEventListener=(type,fn)=>groupListeners.set(type,fn);
+  vm.runInContext(source.slice(source.indexOf('$("shareholder-tooltip").addEventListener("change"'),source.indexOf('document.addEventListener("scroll", event => { if (!$("shareholder-tooltip")')),context);
+  const toggleGroup=(id,checked)=>groupListeners.get("change")({target:{closest:()=>({dataset:{shareholderBlockGroup:id},checked})}});
+  toggleGroup("finance",false);
+  for(const type of ["基金","QFII","保险","社保","券商","信托","AMC"]) assert.equal(context.shareholderTypeBlocked(type),false,"one financial-group choice applies to every detailed member");
+  assert.equal(buttons[1].classList["has-shareholder-alert"],true,"restoring the financial group restores AMC dots");
+  assert.equal(buttons[0].classList["has-shareholder-alert"],false,"the corporate group remains blocked independently");
+  assert.ok(tooltip.innerHTML.includes('>AMC · 十大股东'),"peer details retain the specific AMC classification");
+  toggleGroup("company",false);
+  assert.equal(buttons[0].classList["has-shareholder-alert"],true);
+  toggleGroup("company",true);
+  assert.equal(buttons[0].classList["has-shareholder-alert"],false);
+  assert.equal(buttons[1].classList["has-shareholder-alert"],true,"blocking Other after the split cannot re-block an explicitly visible AMC");
+  delete context.state.shareholderBlockedTypes;
+  assert.equal(context.shareholderTypeBlocked("企业股东"),true);
+  assert.equal(context.shareholderTypeBlocked("AMC"),false,"group choices persist independently after reload");
+  context.state.shareholderData={...data,rows:[
+    {code:"000010",name:"汇金关联",same_day_limit_up:true,holders:[holder("中央汇金资产管理有限责任公司","中央汇金")]},
+    {code:"000011",name:"结算关联",same_day_limit_up:true,holders:[holder("香港中央结算有限公司","香港中央结算有限公司")]},
+    {code:"000012",name:"证金关联",same_day_limit_up:true,holders:[holder("中国证券金融股份有限公司","国家队")]}]};
+  context.state.shareholderAlertTypes=new Map([["000010",["中央汇金"]],["000011",["香港中央结算有限公司"]],["000012",["国家队"]]]);
+  toggleGroup("clearing",true);
+  assert.equal(context.shareholderTypeBlocked("中央汇金"),true);
+  assert.equal(context.shareholderTypeBlocked("香港中央结算有限公司"),true);
+  assert.equal(context.filteredShareholderRows(context.state.shareholderData).length,0);
+  assert.ok(buttons.every(button=>!button.classList["has-shareholder-alert"]));
+  toggleGroup("clearing",false);
+  assert.equal(context.filteredShareholderRows(context.state.shareholderData).map(p=>p.code).join(","),"000010,000011");
+  assert.equal(buttons[0].classList["has-shareholder-alert"],true);
+  assert.equal(buttons[1].classList["has-shareholder-alert"],true);
+  assert.equal(context.shareholderTypeBlocked("国家队"),true,"the merged option does not change securities-finance or other state-team preferences");
+  toggleGroup("state",true);
+  assert.equal(context.shareholderTypeBlocked("中央汇金"),false,"later state-group changes do not reclassify Huijin into that group");
+  delete context.state.shareholderBlockedTypes;
+  assert.equal(context.shareholderTypeBlocked("中央汇金"),false,"an explicit merged-option choice survives reload independently of state-team settings");
+  const partialInput={getAttribute:()=>"mixed"};tooltip.querySelectorAll=()=>[partialInput];
+  context.updateShareholderTooltip();
+  assert.equal(partialInput.indeterminate,true,"partial preferences have a native mixed checkbox, not just text");
   console.log("Shareholder popup: entry points, escaping, dates, priority badges, empty/error states, bounds and stale replies: passed.");
 })().catch(e=>{console.error(e);process.exitCode=1});

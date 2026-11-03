@@ -75,7 +75,49 @@ def cents(value):
     return int((Decimal(str(value)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
-def stock_events(stock, points, auction=None, multiple=3):
+def rapid_moves(points, previous_close):
+    """Keep the first 3-point crossing of each wave in contiguous minute data."""
+    if not previous_close or previous_close <= 0:
+        return []
+    moves, recent, wave, previous_minute = [], [], None, None
+    for point in points:
+        if not regular_time(point["time"]):
+            continue
+        minute = clock_seconds(point["time"]) // 60
+        current = {"minute": minute, "time": point["time"], "price": point["price"]}
+        if previous_minute is None or minute - previous_minute != 1:
+            recent, wave = [], None
+        previous_minute = minute
+        recent = [p for p in recent if minute - p["minute"] <= 5]
+        if wave:
+            extreme, direction = wave["extreme"], wave["direction"]
+            if (current["price"] - extreme["price"]) * direction > 0:
+                wave["extreme"] = current
+            elif (extreme["price"] - current["price"]) * direction / previous_close * 100 >= 1 - 1e-9 or minute - extreme["minute"] >= 5:
+                # A one-point reversal or five minutes without a new extreme
+                # starts a new wave; carry its turning point into the new leg.
+                recent = [extreme] if minute - extreme["minute"] <= 5 else []
+                wave = None
+        if wave is None and recent:
+            low, high = min(recent, key=lambda p: p["price"]), max(recent, key=lambda p: p["price"])
+            candidates = [(low, 1), (high, -1)]
+            candidates = [(start, direction) for start, direction in candidates
+                          if (current["price"] - start["price"]) * direction / previous_close * 100 >= 3 - 1e-9]
+            if candidates:
+                start, direction = max(candidates, key=lambda item: item[0]["minute"])
+                change = (current["price"] - start["price"]) / previous_close * 100
+                moves.append({"kind": "rapid_up" if direction > 0 else "rapid_down", "time": current["time"],
+                              "label": "快速涨幅" if direction > 0 else "快速跌幅", "price": current["price"],
+                              "start_time": start["time"], "start_price": start["price"],
+                              "change_pp": round(change, 4), "duration_minutes": minute - start["minute"],
+                              "from_pct": round((start["price"] / previous_close - 1) * 100, 4),
+                              "to_pct": round((current["price"] / previous_close - 1) * 100, 4)})
+                wave = {"direction": direction, "extreme": current}
+        recent.append(current)
+    return moves
+
+
+def stock_events(stock, points, auction=None, multiple=10, *, previous_close=None):
     """Minute observations never claim to reconstruct intra-minute order books."""
     events = []
     limit = cents(stock["close"]) if stock.get("close") and math.isfinite(float(stock["close"])) and float(stock["close"]) > 0 else None
@@ -106,6 +148,8 @@ def stock_events(stock, points, auction=None, multiple=3):
             if point["time"] == "09:30" and point["volume"] >= match["volume"]:
                 point["volume"] -= match["volume"]
     day_volume = sum(p["volume"] for p in adjusted)
+    first_minute = first_second // 60 if first_second is not None and (regular_time(first) or first_second == 33900) else next(
+        (clock_seconds(p["time"]) // 60 for p in adjusted if regular_time(p["time"]) and limit is not None and cents(p["price"]) == limit), None)
     seen_limit, previous, recent = False, None, []
     for point in adjusted:
         minute = clock_seconds(point["time"]) // 60
@@ -126,10 +170,16 @@ def stock_events(stock, points, auction=None, multiple=3):
             baseline = median(recent[-5:])
             volume = point["volume"]
             if baseline > 0 and volume >= multiple * baseline and volume >= max(10000, day_volume * .005):
-                add("volume", "放量", point["time"], "minute", "本分钟量达到此前连续5分钟中位数的指定倍数，且不低于日内量0.5%和100手",
-                    volume=volume, baseline=baseline, ratio=round(volume / baseline, 2), price=point["price"])
+                phase = "unknown" if first_minute is None else "before" if minute < first_minute else "after" if minute > first_minute else "at"
+                label = {"before": "涨停前放量", "after": "涨停后放量", "at": "涨停当分钟放量", "unknown": "放量（时点缺失）"}[phase]
+                add("volume", label, point["time"], "minute", "本分钟量达到此前连续5分钟中位数的指定倍数，且不低于日内量0.5%和100手；按已知首次涨停时点区分前后，同一分钟不推断先后，开板后仍归涨停后",
+                    volume=volume, baseline=baseline, ratio=round(volume / baseline, 2), price=point["price"], volume_phase=phase)
         recent.append(point["volume"])
         previous = {"minute": minute, "at_limit": at_limit}
+    for move in rapid_moves(adjusted, previous_close):
+        add(move["kind"], move["label"], move["time"], "minute",
+            f"{move['start_time']}—{move['time']}，{move['duration_minutes']}分钟内涨跌幅由{move['from_pct']:+.2f}%变为{move['to_pct']:+.2f}%，变化{move['change_pp']:+.2f}个百分点；同一波首次达到3个百分点时记录，反向回撤1个百分点或5分钟未创新极值后重新识别",
+            **{key: value for key, value in move.items() if key not in ("kind", "label", "time")})
     return events
 
 
@@ -197,12 +247,12 @@ def interaction_groups(events, window):
     return sorted(groups, key=lambda group: (group["minute"], group["end_minute"], group["id"]))
 
 
-def timeline(archive_path, day, window=2, multiple=3, *, exclude_gem=True, include_live=False):
+def timeline(archive_path, day, window=2, multiple=10, *, exclude_gem=True, include_live=False):
     intraday.validate_day(day)
     if not isinstance(window, int) or not 0 <= window <= 10:
         raise ValueError("关联窗口应为0至10分钟，0表示同一分钟")
-    if not math.isfinite(float(multiple)) or not 2 <= float(multiple) <= 10:
-        raise ValueError("放量倍数应为2至10倍")
+    if not math.isfinite(float(multiple)) or not 10 <= float(multiple) <= 100:
+        raise ValueError("放量倍数应为10至100倍")
     if not isinstance(exclude_gem, bool):
         raise ValueError("创业板屏蔽选项无效")
     multiple = float(multiple)
@@ -231,7 +281,7 @@ def timeline(archive_path, day, window=2, multiple=3, *, exclude_gem=True, inclu
             partial += cached["status"] != "ok"
         if not points or cached["status"] != "ok" or auction.get("status") == "unchecked":
             jobs.append({"code": stock["code"], "name": stock["name"], "force": bool(points and cached["status"] != "ok")})
-        events.extend(stock_events(stock, points, auction, multiple))
+        events.extend(stock_events(stock, points, auction, multiple, previous_close=cached["previous_close"] if cached else None))
     events = associate(events, window)
     return {"date": day, "window": window, "multiple": multiple, "pool": pool, "provisional": bool(snapshot),
             "scope": {"start_time": "09:30", "exclude_st": True, "exclude_gem": exclude_gem},

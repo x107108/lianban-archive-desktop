@@ -75,6 +75,15 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual(pool["600002"]["first_time"], "09:40:01", "existing validated clocks are never replaced")
         self.assertTrue(any(e["time"] == "09:30:33" and e["precision"] == "source" for e in data["events"]))
         self.assertEqual(data["time_coverage"], {"cached": True, "missing": 1})
+        for read_only in (False, True):
+            with patch.object(provider, "_historical_day", side_effect=AssertionError("GET must stay offline")):
+                daily = app.read_api(SimpleNamespace(db_path=path, read_only=read_only), "/api/date?date=" + day)
+            daily_pool = {row["code"]: row for row in daily["rows"]}
+            self.assertEqual(daily_pool["000001"]["first_time"], "09:30:33")
+            self.assertEqual(daily_pool["000001"]["boards"], 4)
+            self.assertIsNone(daily_pool["600001"]["first_time"])
+            self.assertEqual(daily_pool["600002"]["first_time"], "09:40:01")
+            self.assertEqual(daily["time_coverage"], {"cached": True, "missing": 1})
         with closing(db.connect(path)) as conn:
             self.assertEqual([dict(r) for r in conn.execute("SELECT * FROM events ORDER BY code")], before)
         with patch.object(provider, "_historical_day", return_value=provider.DayResult(day, [], "empty", "", "empty.json")):
@@ -99,14 +108,14 @@ class TimelineTests(unittest.TestCase):
     def test_volume_uses_past_median_and_never_double_counts_opening_match(self):
         points = [point(f"09:{30+i:02}", volume=10000) for i in range(6)]
         points[0]["volume"] = 500000
-        points[-1]["volume"] = 30000
+        points[-1]["volume"] = 100000
         original = deepcopy(points)
         auction = {"points": [{"time": "09:25", "volume": 490000}]}
         events = timeline.stock_events(stock(), points, auction)
         volume = [e for e in events if e["kind"] == "volume"]
-        self.assertEqual([(e["time"], e["baseline"], e["ratio"]) for e in volume], [("09:35", 10000, 3)])
+        self.assertEqual([(e["time"], e["baseline"], e["ratio"]) for e in volume], [("09:35", 10000, 10)])
         self.assertEqual(points, original)
-        self.assertFalse(any(e["kind"] == "volume" for e in timeline.stock_events(stock(), points, auction, multiple=5)))
+        self.assertFalse(any(e["kind"] == "volume" for e in timeline.stock_events(stock(), points, auction, multiple=20)))
 
     def test_zero_baselines_lunch_and_closing_auction_do_not_create_spikes(self):
         zeros = [point(f"09:{30+i:02}", volume=0) for i in range(5)] + [point("09:35", volume=500000)]
@@ -114,6 +123,60 @@ class TimelineTests(unittest.TestCase):
         close = [point(f"14:{55+i:02}") for i in range(5)] + [point("15:00", volume=500000)]
         for points in (zeros, lunch, close):
             self.assertFalse(any(e["kind"] == "volume" for e in timeline.stock_events(stock(), points)))
+
+    def test_volume_phases_follow_first_seal_not_current_sealed_state(self):
+        points = [point(f"09:{30+i:02}", price=11 if i == 10 else 10, volume=100000 if i in (5, 10, 11) else 10000) for i in range(12)]
+        for first in ("09:40:25", None):
+            events = timeline.stock_events(stock(first_time=first), points)
+            spikes = [e for e in events if e["kind"] == "volume"]
+            self.assertEqual([(e["time"], e["volume_phase"], e["label"]) for e in spikes],
+                             [("09:35", "before", "涨停前放量"), ("09:40", "at", "涨停当分钟放量"), ("09:41", "after", "涨停后放量")])
+            self.assertTrue(any(e["kind"] == "break" and e["time"] == "09:41" for e in events))
+        auction_spikes = timeline.stock_events(stock(first_time="09:25:00"), points)
+        self.assertEqual({e["volume_phase"] for e in auction_spikes if e["kind"] == "volume"}, {"after"})
+        unknown = timeline.stock_events(stock(close=None), points)
+        self.assertTrue(all(e["volume_phase"] == "unknown" for e in unknown if e["kind"] == "volume"))
+
+    def test_rapid_moves_use_percentage_points_and_merge_each_wave(self):
+        points = [point(f"09:{30+i:02}", price) for i, price in enumerate([10, 10.1, 10.2, 10.3, 10.45, 10.55, 10.3, 10.25, 10.2])]
+        original = deepcopy(points)
+        events = timeline.stock_events(stock(), points, previous_close=10)
+        moves = [e for e in events if e["kind"].startswith("rapid_")]
+        self.assertEqual([(e["kind"], e["time"], e["start_time"], e["change_pp"]) for e in moves],
+                         [("rapid_up", "09:33", "09:30", 3), ("rapid_down", "09:37", "09:35", -3)])
+        self.assertTrue(all(e["precision"] == "minute" for e in moves))
+        self.assertEqual(points, original)
+        high_start = timeline.rapid_moves([point("09:30", 22), point("09:31", 22.3), point("09:32", 22.6)], 20)
+        self.assertEqual((high_start[0]["from_pct"], high_start[0]["to_pct"], high_start[0]["change_pp"]), (10, 13, 3), "3 points is measured against yesterday's close, not the wave's starting price")
+
+    def test_rapid_moves_do_not_cross_gaps_lunch_or_the_five_minute_window(self):
+        cases = [
+            [point("09:30", 10), point("09:31", 10.29)],
+            [point("09:30", 10), point("09:32", 10.4)],
+            [point("11:30", 10), point("13:00", 10.5)],
+            [point("09:25", 10), point("09:30", 10.5)],
+            [point(f"09:{30+i:02}", 10 + i * .05) for i in range(7)],
+        ]
+        for points in cases:
+            self.assertEqual(timeline.rapid_moves(points, 10), [])
+        for reference in (None, 0):
+            self.assertEqual(timeline.rapid_moves([point("09:30", 10), point("09:31", 10.5)], reference), [])
+        boundary = timeline.rapid_moves([point(f"09:{30+i:02}", 10 + i * .06) for i in range(6)], 10)
+        self.assertEqual((boundary[0]["time"], boundary[0]["duration_minutes"]), ("09:35", 5))
+
+    def test_cached_timeline_passes_its_own_previous_close_to_rapid_detection(self):
+        root = Path(__file__).parent / "test-data" / ("timeline-rapid-" + uuid4().hex)
+        root.mkdir(parents=True)
+        path, item = root / "archive.sqlite3", stock()
+        with closing(db.connect(path)) as conn:
+            db.save_day(conn, item["date"], [item], "synthetic")
+        points = [point("09:30", 10), point("09:31", 10.3)]
+        with closing(intraday.connect(intraday.store_path(path))) as conn:
+            intraday.save_session(conn, item, points, "synthetic", "test.json")
+        with patch("requests.get", side_effect=AssertionError("derived nodes must reuse the local cache")):
+            result = timeline.timeline(path, item["date"])
+        rapid = [e for e in result["events"] if e["kind"] == "rapid_up"]
+        self.assertEqual([(e["time"], e["change_pp"]) for e in rapid], [("09:31", 3)])
 
     def test_association_is_chronological_bounded_and_never_self_causal(self):
         anchor = timeline.stock_events(stock(first_time="09:40:05"), [])[0]
@@ -214,7 +277,7 @@ class TimelineTests(unittest.TestCase):
             db.save_stock_tags(conn, "000001", ["自定义标签", "机器人"], 0)
             db.save_stock_tags(conn, "300001", ["创业标签"], 0)
         with patch("requests.get", side_effect=AssertionError("timeline reads must stay offline")):
-            result = app.read_api(SimpleNamespace(db_path=path), "/api/intraday/timeline?date=2026-10-23&window=2&multiple=3")
+            result = app.read_api(SimpleNamespace(db_path=path), "/api/intraday/timeline?date=2026-10-23&window=2&multiple=10")
         self.assertEqual(result["coverage"], {"total": 1, "analyzed": 0, "partial": 0, "missing": 1})
         self.assertEqual(result["scope"], {"start_time": "09:30", "exclude_st": True, "exclude_gem": True})
         self.assertEqual([stock["code"] for stock in result["pool"]], ["000001"], "ST, *ST and both 300/301 boards are excluded from picker options")
@@ -232,7 +295,11 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual(expanded["interactions"][0]["stock_count"], 3)
         self.assertEqual(intraday.stock_view(path, "2026-10-23", "300001")["stock"]["name"], "创业板", "timeline GEM stocks can be opened for minute viewing")
         self.assertEqual(timeline.timeline(path, "2026-10-23", window=0)["window"], 0)
-        for query in ("window=-1", "window=99", "multiple=nan", "multiple=1", "exclude_gem=yes"):
+        self.assertEqual(app.read_api(SimpleNamespace(db_path=path), "/api/intraday/timeline?date=2026-10-23")["multiple"], 10)
+        for multiple in range(10, 101, 10):
+            result = app.read_api(SimpleNamespace(db_path=path), f"/api/intraday/timeline?date=2026-10-23&multiple={multiple}")
+            self.assertEqual(result["multiple"], multiple)
+        for query in ("window=-1", "window=99", "multiple=nan", "multiple=9", "multiple=101", "exclude_gem=yes"):
             with self.assertRaises(ValueError):
                 app.read_api(SimpleNamespace(db_path=path), "/api/intraday/timeline?date=2026-10-23&" + query)
         intraday_sources.save_catalog(path, [{"code": "000001", "name": "ST当前股"}], 1)

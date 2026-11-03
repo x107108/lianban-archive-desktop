@@ -56,6 +56,10 @@ def connect(path):
             date TEXT PRIMARY KEY, stocks_json TEXT NOT NULL, source TEXT NOT NULL,
             fetched_at TEXT NOT NULL, raw_path TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS broken_pools (
+            date TEXT PRIMARY KEY, stocks_json TEXT NOT NULL, source TEXT NOT NULL,
+            fetched_at TEXT NOT NULL, raw_path TEXT NOT NULL
+        );
     """)
     return conn
 
@@ -264,6 +268,22 @@ def trading_dates(conn, *, include_live=False):
     return sorted((day for day in known if isinstance(day, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) and day <= today), reverse=True)
 
 
+def broken_pool_view(archive_path, day):
+    result = {"rows": [], "source": None, "fetched_at": None, "needs_collection": bool(day)}
+    path = store_path(archive_path)
+    if not day or not path.is_file():
+        return result
+    with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as conn:
+        conn.row_factory = sqlite3.Row
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='broken_pools'").fetchone():
+            return result
+        row = conn.execute("SELECT * FROM broken_pools WHERE date=?", (day,)).fetchone()
+    if row:
+        result.update(rows=json.loads(row["stocks_json"]), source=row["source"], fetched_at=row["fetched_at"],
+                      needs_collection=live_pool.minute_refresh_due(day, row["fetched_at"]))
+    return result
+
+
 def overview(archive_path, day=None, *, include_live=False):
     if day:
         validate_day(day)
@@ -286,7 +306,12 @@ def overview(archive_path, day=None, *, include_live=False):
             db.enrich_industries(conn, rows[start:start + 250])
         pool = conn.execute("SELECT status,source FROM days WHERE date=?", (selected,)).fetchone()
     sessions, errors = _cached(archive_path, day=selected) if selected else ({}, {})
+    broken = broken_pool_view(archive_path, selected)
+    broken_stocks = {row["code"]: row for row in broken["rows"]}
     for row in rows:
+        if not row["boards"] and row["code"] in broken_stocks:
+            row.update(broken_stocks[row["code"]])
+        row["stock_type"] = "limit_up" if row["boards"] else "broken" if row["code"] in broken_stocks else "mainboard"
         cached = sessions.get((selected, row["code"]))
         row["initials"] = db.stock_initials(row["name"])
         row.update(status=cached["status"] if cached else "missing", point_count=cached["point_count"] if cached else 0,
@@ -295,6 +320,7 @@ def overview(archive_path, day=None, *, include_live=False):
             "ready": sum(r["status"] == "ok" for r in rows), "partial": sum(r["status"] == "partial" for r in rows),
             "missing": sum(r["status"] == "missing" for r in rows), "scope_note": SCOPE if universe else "主板目录尚未同步，当前仅展示本地已收录的非 ST 主板个股。",
             "provisional": bool(snapshot),
+            "broken_pool": {key: value for key, value in broken.items() if key != "rows"},
             "catalog_complete": bool(universe), "catalog_fetched_at": universe[0]["fetched_at"] if universe else None,
             "pool_status": "provisional" if snapshot else pool["status"] if pool else "missing", "pool_source": snapshot["source"] if snapshot else pool["source"] if pool else None}
 
@@ -325,6 +351,10 @@ def stock_view(archive_path, day, code, *, include_live=False):
             row["blacklisted"] = conn.execute("SELECT 1 FROM stock_blacklist WHERE code=?", (code,)).fetchone() is not None
     if row is None:
         raise ValueError("该股票不在沪深主板目录或本地分时档案中")
+    broken = next((stock for stock in broken_pool_view(archive_path, day)["rows"] if stock["code"] == code), None)
+    if not row["boards"] and broken:
+        row.update(broken)
+    row["stock_type"] = "limit_up" if row["boards"] else "broken" if broken else "mainboard"
     sessions, errors = _cached(archive_path, day=day, code=code, detail=True)
     cached = sessions.get((day, code))
     result = {"date": day, "stock": dict(row), "status": "missing", "points": [], "note": errors.get((day, code), "该股票当日分时尚未采集")}

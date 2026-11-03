@@ -26,12 +26,12 @@ SCOPE_NOTE = "按本地已收录股票最新披露的股东、控股股东、实
 BATCH_SIZE = 100
 RELATIONS_SQL = """WITH relations AS (
     SELECT code,scope AS kind,holder_key,holder_name,
-           CASE WHEN holder_key='香港中央结算有限公司' THEN '香港中央结算有限公司' ELSE holder_type END AS holder_type,
+           shareholder_type(holder_key,holder_type) AS holder_type,
            report_date,holding_ratio,'' AS via_name,'' AS source_url
     FROM stock_shareholders
     UNION ALL
     SELECT code,kind,holder_key,holder_name,
-           CASE WHEN holder_key='香港中央结算有限公司' THEN '香港中央结算有限公司' ELSE holder_type END,
+           shareholder_type(holder_key,holder_type),
            NULL AS report_date,NULL AS holding_ratio,via_name,source_url
     FROM stock_control_owners
 ) """
@@ -174,20 +174,20 @@ class Refresher(MetadataRefresher):
         super().__init__(path, prefix="shareholder", refresh_callback=refresh)
 
 
-def today_limit_ups(conn, *, include_live=True, now=None):
+def limit_ups_on_date(conn, day=None, *, include_live=True, now=None):
     current = (now or datetime.now(db.TZ)).astimezone(db.TZ)
-    today = current.date().isoformat()
-    confirmed = conn.execute("SELECT fetched_at FROM days WHERE date=? AND status='ok'", (today,)).fetchone()
-    pool = live_pool.snapshot(conn, today) if include_live and not confirmed else None
+    day = day or current.date().isoformat()
+    confirmed = conn.execute("SELECT fetched_at FROM days WHERE date=? AND status='ok'", (day,)).fetchone()
+    pool = live_pool.snapshot(conn, day) if include_live and not confirmed else None
     if confirmed:
-        limit_codes = {r[0] for r in conn.execute("SELECT code FROM events WHERE date=?", (today,))}
+        limit_codes = {r[0] for r in conn.execute("SELECT code FROM events WHERE date=?", (day,))}
     else:
         limit_codes = {r["code"] for r in pool["records"]} if pool else set()
-    return current, confirmed, pool, limit_codes
+    return current, day, confirmed, pool, limit_codes
 
 
-def today_alerts(conn, *, include_live=True, now=None):
-    current, _, _, codes = today_limit_ups(conn, include_live=include_live, now=now)
+def date_alerts(conn, day=None, *, include_live=True, now=None):
+    _, day, _, _, codes = limit_ups_on_date(conn, day, include_live=include_live, now=now)
     holders, alerts = {}, {}
     if len(codes) > 1:
         placeholders = ",".join("?" for _ in codes)
@@ -207,15 +207,14 @@ def today_alerts(conn, *, include_live=True, now=None):
                     if peer != code:
                         alerts.setdefault(code, set()).add(holder_type)
     # Return all qualifying categories once; each browser applies its own blocks.
-    return {"today": current.date().isoformat(),
+    return {"date": day,
             "rows": [{"code": code, "types": sorted(types)} for code, types in sorted(alerts.items())]}
 
 
-def stock_view(conn, code, *, include_live=True, now=None):
+def stock_view(conn, code, *, day=None, include_live=True, now=None):
     if not re.fullmatch(r"[0-9]{6}", code):
         raise ValueError("请输入六位股票代码")
-    current, confirmed, pool, limit_codes = today_limit_ups(conn, include_live=include_live, now=now)
-    today = current.date().isoformat()
+    current, day, confirmed, pool, limit_codes = limit_ups_on_date(conn, day, include_live=include_live, now=now)
     stock = conn.execute("SELECT name FROM stocks WHERE code=?", (code,)).fetchone()
     profiles = [dict(r) for r in conn.execute("SELECT scope,report_date,fetched_at FROM shareholder_profiles WHERE code=? ORDER BY scope DESC", (code,))]
     own = {}
@@ -239,7 +238,7 @@ def stock_view(conn, code, *, include_live=True, now=None):
         "WHEN 'actual_controller' THEN 3 ELSE 4 END", (code, *own))
     for row in matches:
         peer = peers.setdefault(row["code"], {"code": row["code"], "name": row["name"], "holders": {},
-                    "today_together": code in limit_codes and row["code"] in limit_codes})
+                    "same_day_limit_up": code in limit_codes and row["code"] in limit_codes})
         holder = peer["holders"].setdefault(row["holder_key"], {"name": row["holder_name"], "type": row["holder_type"],
                            "reports": [], "relations": [], "own_relations": own[row["holder_key"]]})
         if row["kind"] in REPORTS:
@@ -252,16 +251,16 @@ def stock_view(conn, code, *, include_live=True, now=None):
         peer["holders"] = sorted(peer["holders"].values(), key=lambda h: h["name"])
         peer["shared_count"] = len(peer["holders"])
         rows.append(peer)
-    rows.sort(key=lambda p: (not p["today_together"], -p["shared_count"], p["code"]))
+    rows.sort(key=lambda p: (not p["same_day_limit_up"], -p["shared_count"], p["code"]))
     return {"code": code, "name": stock["name"] if stock else code, "profiles": profiles,
             "own_holders": own_holders, "rows": rows, "total": len(rows), "control_owners": controls,
             "control_status": settings.get("control_owner_status", "empty"),
             "control_checked": conn.execute("SELECT 1 FROM stock_control_profiles WHERE code=?", (code,)).fetchone() is not None,
             "control_coverage": conn.execute("SELECT COUNT(DISTINCT code) FROM stock_control_owners").fetchone()[0],
             "status": settings.get("shareholder_status", "empty"), "source": SOURCE, "scope_note": SCOPE_NOTE,
-            "today": today, "today_status": "confirmed" if confirmed else "provisional" if pool else "unavailable",
-            "today_fetched_at": confirmed[0] if confirmed else pool["fetched_at"] if pool else None,
-            "today_stale": bool(pool and current - datetime.fromisoformat(pool["fetched_at"]) > timedelta(minutes=3)),
+            "date": day, "date_status": "confirmed" if confirmed else "provisional" if pool else "unavailable",
+            "date_fetched_at": confirmed[0] if confirmed else pool["fetched_at"] if pool else None,
+            "date_stale": bool(pool and current - datetime.fromisoformat(pool["fetched_at"]) > timedelta(minutes=3)),
             "coverage": conn.execute("SELECT COUNT(DISTINCT code) FROM stock_shareholders").fetchone()[0],
             "requested": conn.execute("SELECT COUNT(*) FROM stocks").fetchone()[0]}
 

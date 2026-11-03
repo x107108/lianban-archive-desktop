@@ -18,6 +18,7 @@ from pypinyin import Style, lazy_pinyin
 
 from relationships import stock_relationships, stock_pair_comparison
 from provinces import normalize_province
+from shareholder_types import classify_holder
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_DB = ROOT / "data" / "archive.sqlite3"
@@ -35,6 +36,7 @@ def connect(path=DEFAULT_DB):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.create_function("shareholder_type", 2, classify_holder, deterministic=True)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);

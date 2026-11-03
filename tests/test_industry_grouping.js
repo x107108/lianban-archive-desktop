@@ -29,7 +29,7 @@ const sameHeightCell = fiveBoardRow.split('data-group-label="同板业务"')[1].
 assert.ok(!sameHeightCell.includes('data-card-code="000001"'), "same-height peers cannot trigger extra cards");
 assert.equal(occurrences(full, "000004"), 2, "first-board stocks keep all their tags");
 assert.equal(occurrences(full, "000006"), 1, "an untagged stock still has a fallback card");
-assert.ok(full.includes('data-group-label="独苗"'));
+assert.ok(full.includes('data-group-label="暂无标签 · 样本000006"') && !full.includes('data-group-label="独苗"'), "an untagged consecutive-board stock gets its own column");
 const selected = context.renderIndustryColumns(rows.filter(row => row.boards === 5), context.industryTagBoardCounts(rows));
 assert.equal(occurrences(selected, "000001"), 3, "board filtering preserves full-day cross-height evidence");
 assert.equal(occurrences(selected, "000002"), 1);
@@ -41,7 +41,7 @@ assert.equal(occurrences(regressionHTML,"003029"),1,"吉大正元 has only its u
 assert.ok(!regressionHTML.includes('data-group-label="金融"') && !regressionHTML.includes('data-group-label="博弈"'));
 assert.equal(occurrences(regressionHTML,"600668"),2,"尖峰集团 keeps both real cross-height links");
 assert.equal(occurrences(regressionHTML,"000007"),1,"a stock with no cross-height links keeps one fallback");
-assert.ok(regressionHTML.includes('data-group-label="独苗"') && !regressionHTML.includes('data-group-label="独立副业"'));
+assert.ok(!regressionHTML.includes('data-group-label="独苗"') && ["独立主业", "独立副业"].filter(tag => regressionHTML.includes(`data-group-label="${tag}"`)).length === 1, "an independent leader retains one normal concept column");
 const regressionSelected=context.renderIndustryColumns(regressionRows.filter(row=>row.boards===2),context.industryTagBoardCounts(regressionRows));
 assert.equal(occurrences(regressionSelected,"003029"),1);
 assert.equal(occurrences(regressionSelected,"600668"),2);
@@ -90,7 +90,7 @@ assert.ok(pinyinHTML.includes('title="股票名称首字母：FJSN">FJSN'));
 assert.ok(pinyinHTML.includes("按拼音分组分列"));
 assert.equal(context.renderIndustryColumns([...pinyinRows].reverse()).split('<div class="board-comparison"')[1],pinyinHTML.split('<div class="board-comparison"')[1],"input order cannot change groups or card order");
 const jCell = cellHTML(pinyinHTML,"J");
-assert.ok(jCell.indexOf('data-card-code="600802"') < jCell.indexOf('data-card-code="000003"') && jCell.indexOf('data-card-code="000003"') < jCell.indexOf('data-card-code="002949"'),"within a group, matches nearer the left of a name come first");
+assert.deepEqual([...jCell.matchAll(/data-card-code="([^"]+)"/g)].map(match => match[1]), ["000003", "002949", "600802"], "missing first-limit times use stable stock-code order instead of letter-match position");
 const selectedPinyin = context.renderIndustryColumns(pinyinRows.filter(row=>row.boards===1));
 for(const token of ["HY","H","Y"]) for(const code of ["002949","002724"]) assert.equal(occurrences(cellHTML(selectedPinyin,token),code),1,"board filtering retains overlapping memberships");
 assert.equal(occurrences(selectedPinyin,"000005"),0,"another height's stock must remain filtered out");
@@ -119,7 +119,7 @@ assert.equal(occurrences(cellHTML(codeHTML,"0"),"000001"),1,"repeated zeroes sti
 assert.equal(occurrences(codeHTML,"999999"),1,"self-repetition cannot create multi-stock numeric matches");
 const zeroCell=cellHTML(codeHTML,"0");
 assert.ok(zeroCell.indexOf('data-card-code="000001"')<zeroCell.indexOf('data-card-code="001234"')
-  &&zeroCell.indexOf('data-card-code="001234"')<zeroCell.indexOf('data-card-code="123450"'),"matches earlier in the code precede later matches, then full codes break ties");
+  &&zeroCell.indexOf('data-card-code="001234"')<zeroCell.indexOf('data-card-code="123450"'),"missing first-limit times use stable stock-code order within numeric groups");
 assert.equal(context.renderIndustryColumns([...codeRows].reverse()).split('<div class="board-comparison"')[1],codeHTML.split('<div class="board-comparison"')[1]);
 const codeSelected=context.renderIndustryColumns(codeRows.filter(row=>row.boards===2));
 assert.equal(occurrences(cellHTML(codeSelected,"0",2),"001235"),1);

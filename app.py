@@ -53,7 +53,7 @@ def read_api(server, path):
         exclude_gem = arg("exclude_gem", "1")
         if exclude_gem not in ("0", "1"):
             raise ValueError("创业板屏蔽选项无效")
-        return intraday_timeline.timeline(server.db_path, valid_day(arg("date")), int(arg("window", "2")), float(arg("multiple", "3")), exclude_gem=exclude_gem == "1", include_live=editable)
+        return intraday_timeline.timeline(server.db_path, valid_day(arg("date")), int(arg("window", "2")), float(arg("multiple", "10")), exclude_gem=exclude_gem == "1", include_live=editable)
     if parsed.path == "/api/meta" and hasattr(server, "industry_refresher"):
         server.industry_refresher.maybe_refresh()
         server.registration_refresher.maybe_refresh()
@@ -65,7 +65,9 @@ def read_api(server, path):
             server.concept_refresher.maybe_refresh()
     with closing(db.connect(server.db_path)) as conn:
         if parsed.path == "/api/stock-shareholders":
-            return shareholders.stock_view(conn, arg("code"), include_live=editable)
+            return shareholders.stock_view(conn, arg("code"), day=valid_day(arg("date")) if arg("date") else None, include_live=editable)
+        if parsed.path == "/api/shareholder-alerts":
+            return shareholders.date_alerts(conn, valid_day(arg("date")), include_live=editable)
         if parsed.path == "/api/announcement":
             return db.get_announcement(conn)
         if parsed.path == "/api/site-links":
@@ -84,7 +86,6 @@ def read_api(server, path):
         metadata["tag_alias_revision"] = db.tag_alias_revision(conn)
         if parsed.path == "/api/meta":
             metadata["app_version"] = {"channel": app_version.CHANNEL, "version": app_version.VERSION}
-            metadata["shareholder_alerts"] = shareholders.today_alerts(conn, include_live=editable)
             if editable:
                 metadata["live"] = live_pool.metadata(conn)
             catalog = tag_management.catalog(conn)
@@ -146,6 +147,9 @@ def read_api(server, path):
             result = db.date_view(conn, day, minimum, arg("market", "all"), arg("q")[:100],
                                   exclude_st == "1", boards, exclude_gem=exclude_gem == "1",
                                   snapshot=live_pool.snapshot(conn, day) if editable else None)
+            if not result["provisional"]:
+                import intraday_timeline
+                result["time_coverage"] = intraday_timeline.enrich_seal_times(server.db_path, day, result["rows"])
             if editable and day in live.get("dates", []):
                 result["live"] = live
                 if not result["provisional"] and result["data_status"] != "ok":
@@ -197,11 +201,11 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/stock-tags", "/api/blacklist", "/api/stock-note", "/api/tag-rename", "/api/tag-stocks", "/api/tag-delete", "/api/tag-node", "/api/intraday/collect", "/api/intraday/timeline/times"):
+        if path not in ("/api/stock-tags", "/api/blacklist", "/api/stock-note", "/api/tag-rename", "/api/tag-stocks", "/api/tag-delete", "/api/tag-node", "/api/intraday/collect", "/api/intraday/timeline/times", "/api/intraday/broken-pool"):
             return self.reply({"error": "接口不存在"}, 404)
         if getattr(self.server, "read_only", False):
             return self.reply({"error": "公开版本仅供查询"}, 403)
-        subject = "分时" if path in ("/api/intraday/collect", "/api/intraday/timeline/times") else "黑名单" if path == "/api/blacklist" else "备注" if path == "/api/stock-note" else "标签"
+        subject = "分时" if path in ("/api/intraday/collect", "/api/intraday/timeline/times", "/api/intraday/broken-pool") else "黑名单" if path == "/api/blacklist" else "备注" if path == "/api/stock-note" else "标签"
         if self.headers.get("Content-Type", "").split(";", 1)[0].strip() != "application/json":
             return self.reply({"error": f"请使用 JSON 提交{subject}"}, 415)
         try:
@@ -214,6 +218,9 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/intraday/collect":
                 import intraday_sources
                 return self.reply(intraday_sources.collect_requested(self.server.db_path, valid_day(data.get("date", "")), data.get("code", ""), force=data.get("force") is True))
+            if path == "/api/intraday/broken-pool":
+                import intraday_sources
+                return self.reply(intraday_sources.collect_broken_pool(self.server.db_path, valid_day(data.get("date", ""))))
             if path == "/api/intraday/timeline/times":
                 import intraday_timeline
                 return self.reply(intraday_timeline.collect_seal_times(self.server.db_path, valid_day(data.get("date", "")), force=data.get("force") is True))

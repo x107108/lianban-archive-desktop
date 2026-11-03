@@ -16,7 +16,6 @@ const context = vm.createContext({$, Date: {now: () => clock}, URLSearchParams,
     meta: {live: {enabled: true, today: day}, capabilities: {edit_tags: true}}},
   request: async (...args) => {requests.push(args); return responder(...args);},
   renderMinuteList() {$("minute-stock-list").scrollTop = 0;},
-  renderMinuteCompareList() {$("minute-compare-list").scrollTop = 0;},
   updateMinuteDateNavigation() {}, updateMinuteTimelineControls() {}, recordMinuteData: data => records.push(data.stock.code),
   renderMinuteStockData: data => renders.push(data.stock.code), showMinutePoint: index => renders.push(index), showMinuteAuctionPoint() {},
   refreshMinuteComparisonChart() {}, loadMinuteTimeline: async () => renders.push("timeline")
@@ -38,7 +37,6 @@ function normalResponder(url, channel, options) {
   assert.equal(maxActive, 3, "collection concurrency is bounded");
   assert.equal(requests.filter(([url]) => url === "/api/intraday/collect").length, 5);
   assert.equal($("minute-stock-list").scrollTop, 125);
-  assert.equal($("minute-compare-list").scrollTop, 125);
   assert.equal(context.state.minutePointIndex, 35, "hovered time survives automatic refresh");
   assert.ok(renders.includes(35));
   const count = requests.length;

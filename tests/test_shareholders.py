@@ -1,4 +1,4 @@
-"""Disclosed-name matching, snapshot replacement and today's live/close priority."""
+"""Disclosed-name matching, snapshot replacement and selected-date live/close priority."""
 from contextlib import closing
 from datetime import datetime
 import io
@@ -92,7 +92,7 @@ class ShareholderTests(unittest.TestCase):
             self.assertEqual(next(r["type"] for r in rows if r["name"] == clearing), clearing)
             self.assertEqual(next(r["type"] for r in rows if r["name"] == nominee), "其他")
         self.assertEqual(next(p for p in result["rows"] if p["code"] == "000004")["holders"][0]["type"], "其他")
-        self.assertEqual(sh.today_alerts(self.conn, now=self.now)["rows"],
+        self.assertEqual(sh.date_alerts(self.conn, now=self.now)["rows"],
                          [{"code": "000001", "types": [clearing]}, {"code": "000003", "types": [clearing]}])
         self.assertEqual(self.conn.execute("SELECT holder_type FROM stock_shareholders WHERE code='000003' AND scope='float'").fetchone()[0], "QFII")
 
@@ -100,36 +100,36 @@ class ShareholderTests(unittest.TestCase):
         self.live(["000001", "000003"])
         result = self.view()
         self.assertEqual(result["rows"][0]["code"], "000003")
-        self.assertTrue(result["rows"][0]["today_together"])
-        self.assertEqual(result["today_status"], "provisional")
+        self.assertTrue(result["rows"][0]["same_day_limit_up"])
+        self.assertEqual(result["date_status"], "provisional")
         self.live(["000003"])
-        self.assertFalse(any(r["today_together"] for r in self.view()["rows"]))
-        self.assertFalse(any(r["today_together"] for r in self.view(include_live=False)["rows"]))
+        self.assertFalse(any(r["same_day_limit_up"] for r in self.view()["rows"]))
+        self.assertFalse(any(r["same_day_limit_up"] for r in self.view(include_live=False)["rows"]))
 
     def test_alerts_require_a_different_stock_in_todays_pool(self):
-        self.assertEqual(sh.today_alerts(self.conn, now=self.now)["rows"], [])
+        self.assertEqual(sh.date_alerts(self.conn, now=self.now)["rows"], [])
         self.live(["000001"])
-        self.assertEqual(sh.today_alerts(self.conn, now=self.now)["rows"], [], "a stock cannot match itself across the two holder scopes")
+        self.assertEqual(sh.date_alerts(self.conn, now=self.now)["rows"], [], "a stock cannot match itself across the two holder scopes")
         self.live(["000001", "000003"])
-        alerts = sh.today_alerts(self.conn, now=self.now)
-        self.assertEqual(alerts["today"], "2026-10-29")
+        alerts = sh.date_alerts(self.conn, now=self.now)
+        self.assertEqual(alerts["date"], "2026-10-29")
         self.assertEqual(alerts["rows"], [{"code": "000001", "types": ["其他"]}, {"code": "000003", "types": ["其他"]}])
-        self.assertEqual(sh.today_alerts(self.conn, include_live=False, now=self.now)["rows"], [])
+        self.assertEqual(sh.date_alerts(self.conn, include_live=False, now=self.now)["rows"], [])
         self.live(["000003"])
-        self.assertEqual(sh.today_alerts(self.conn, now=self.now)["rows"], [], "leaving the live pool clears the signal")
+        self.assertEqual(sh.date_alerts(self.conn, now=self.now)["rows"], [], "leaving the live pool clears the signal")
 
     def test_alert_categories_match_popup_and_confirmed_close_supersedes_live(self):
         self.conn.execute("UPDATE stock_shareholders SET holder_type='QFII' WHERE code='000003'")
         self.conn.commit()
         self.live(["000001", "000003"])
-        alerts = sh.today_alerts(self.conn, now=self.now)
+        alerts = sh.date_alerts(self.conn, now=self.now)
         self.assertEqual(alerts["rows"][0], {"code": "000001", "types": ["QFII"]})
         self.assertEqual(self.view()["rows"][0]["holders"][0]["type"], "QFII")
         db.save_day(self.conn, "2026-10-29", [{"code": c, "name": c, "boards": 1} for c in ["000001", "000002"]], "synthetic")
-        self.assertEqual(sh.today_alerts(self.conn, now=self.now)["rows"],
+        self.assertEqual(sh.date_alerts(self.conn, now=self.now)["rows"],
                          [{"code": "000001", "types": ["其他"]}, {"code": "000002", "types": ["其他"]}])
         self.seed(["000002"], {"000002": ["独立股东"]}, "2026-10-15")
-        self.assertEqual(sh.today_alerts(self.conn, now=self.now)["rows"], [], "new holder snapshots remove obsolete matches")
+        self.assertEqual(sh.date_alerts(self.conn, now=self.now)["rows"], [], "new holder snapshots remove obsolete matches")
 
     def test_conflicting_total_and_float_categories_have_same_filter_and_alert_type(self):
         self.conn.execute("UPDATE stock_shareholders SET holder_type='QFII' WHERE code='000003' AND scope='float'")
@@ -137,18 +137,43 @@ class ShareholderTests(unittest.TestCase):
         self.live(["000001", "000003"])
         holder = self.view()["rows"][0]["holders"][0]
         self.assertEqual(holder["type"], "其他")
-        self.assertEqual(sh.today_alerts(self.conn, now=self.now)["rows"][0]["types"], [holder["type"]])
+        self.assertEqual(sh.date_alerts(self.conn, now=self.now)["rows"][0]["types"], [holder["type"]])
 
     def test_yesterday_never_becomes_today_and_confirmed_close_wins(self):
         self.live(["000001", "000003"], day="2026-10-28")
-        self.assertEqual(self.view()["today_status"], "unavailable")
+        self.assertEqual(self.view()["date_status"], "unavailable")
         self.live(["000001", "000003"])
         db.save_day(self.conn, "2026-10-29", [{"code": c, "name": c, "boards": 1} for c in ["000001", "000002"]], "synthetic")
         result = self.view()
-        self.assertEqual(result["today_status"], "confirmed")
-        self.assertTrue(result["rows"][0]["today_together"])
+        self.assertEqual(result["date_status"], "confirmed")
+        self.assertTrue(result["rows"][0]["same_day_limit_up"])
         self.assertEqual(result["rows"][0]["code"], "000002")
-        self.assertFalse(next(r for r in result["rows"] if r["code"] == "000003")["today_together"])
+        self.assertFalse(next(r for r in result["rows"] if r["code"] == "000003")["same_day_limit_up"])
+
+    def test_selected_date_keeps_alerts_after_midnight_and_missing_date_stays_empty(self):
+        db.save_day(self.conn, "2026-10-29", [
+            {"code": c, "name": c, "boards": 1} for c in ["000001", "000003"]], "synthetic")
+        next_day = datetime(2026, 10, 30, 0, 10, tzinfo=db.TZ)
+        expected = [{"code": "000001", "types": ["其他"]}, {"code": "000003", "types": ["其他"]}]
+        self.assertEqual(sh.date_alerts(self.conn, "2026-10-29", now=next_day),
+                         {"date": "2026-10-29", "rows": expected})
+        historical = sh.stock_view(self.conn, "000001", day="2026-10-29", now=next_day)
+        self.assertEqual(historical["date"], "2026-10-29")
+        self.assertEqual(historical["date_status"], "confirmed")
+        self.assertTrue(next(r for r in historical["rows"] if r["code"] == "000003")["same_day_limit_up"])
+        self.assertFalse(next(r for r in historical["rows"] if r["code"] == "000002")["same_day_limit_up"])
+        self.assertEqual(sh.date_alerts(self.conn, "2026-10-30", now=next_day)["rows"], [])
+        self.assertEqual(sh.stock_view(self.conn, "000001", day="2026-10-30", now=next_day)["date_status"], "unavailable")
+
+    def test_explicit_date_uses_its_own_provisional_pool_and_confirmed_close(self):
+        self.live(["000001", "000003"], day="2026-10-28")
+        # The existing confirmed close supersedes an older provisional pool.
+        result = self.view(day="2026-10-28")
+        self.assertEqual(result["date_status"], "confirmed")
+        self.assertTrue(all(r["same_day_limit_up"] for r in result["rows"]))
+        self.live(["000001", "000003"])
+        self.assertEqual(self.view(day="2026-10-29")["date_status"], "provisional")
+        self.assertEqual(sh.date_alerts(self.conn, "2026-10-29", include_live=False, now=self.now)["rows"], [])
 
     def test_failed_or_regressed_refresh_keeps_previous_cache_atomically(self):
         before = [tuple(r) for r in self.conn.execute("SELECT * FROM stock_shareholders")]
@@ -180,13 +205,13 @@ class ShareholderTests(unittest.TestCase):
         self.assertEqual(holder["reports"], [], "retrieval date must not become a shareholder report date")
         self.assertEqual(holder["own_relations"][0]["kind"], "parent_owner")
         self.assertEqual(holder["relations"][0]["kind"], "actual_controller")
-        self.assertTrue(result["rows"][0]["today_together"])
+        self.assertTrue(result["rows"][0]["same_day_limit_up"])
         self.assertEqual(next(r["name"] for r in result["control_owners"] if r["kind"] == "actual_controller"), control.PARENT_OWNER_VIA)
-        self.assertEqual(sh.today_alerts(self.conn, now=self.now)["rows"],
+        self.assertEqual(sh.date_alerts(self.conn, now=self.now)["rows"],
                          [{"code": "000001", "types": ["国资"]}, {"code": "000003", "types": ["国资"]}])
         control.save_batch(self.conn, ["000001"], [], {"000001"})
         self.assertEqual(self.view()["rows"], [], "changed controls remove former upper-owner matches")
-        self.assertEqual(sh.today_alerts(self.conn, now=self.now)["rows"], [])
+        self.assertEqual(sh.date_alerts(self.conn, now=self.now)["rows"], [])
 
     def test_direct_and_controller_relationships_count_entity_once_and_share_alert_category(self):
         records = [{"code": code, "kind": kind, "holder_key": "共同机构", "holder_name": "共同机构",
@@ -200,7 +225,7 @@ class ShareholderTests(unittest.TestCase):
         self.assertEqual(peer["holders"][0]["type"], "控股机构")
         self.assertEqual(len(peer["holders"][0]["relations"]), 2)
         self.assertEqual(len(peer["holders"][0]["reports"]), 2)
-        self.assertEqual(sh.today_alerts(self.conn, now=self.now)["rows"],
+        self.assertEqual(sh.date_alerts(self.conn, now=self.now)["rows"],
                          [{"code": "000001", "types": ["控股机构"]}, {"code": "000003", "types": ["控股机构"]}])
 
     def test_boundary_normalization_and_future_date_rejection(self):
@@ -285,6 +310,27 @@ class ShareholderTests(unittest.TestCase):
         self.assertTrue(all(p["report_date"] is None for p in result["profiles"]))
         with self.assertRaises(ValueError):
             app.read_api(SimpleNamespace(db_path=path), "/api/stock-shareholders?code=bad")
+
+    def test_routes_use_the_selected_date_and_validate_it_at_the_boundary(self):
+        path = Path(__file__).parent / "test-data" / ("shareholder-date-" + uuid4().hex) / "archive.sqlite3"
+        with closing(db.connect(path)) as conn:
+            db.save_day(conn, "2026-10-29", [{"code": code, "name": code, "boards": 1}
+                        for code in ("000001", "000002")], "synthetic")
+            rows = [{"code": code, "holder_name": "共同机构", "holder_key": "共同机构", "holder_type": "其他",
+                     "report_date": "2026-09-30"} for code in ("000001", "000002")]
+            sh.save_batch(conn, ["000001", "000002"], {"total": rows, "float": rows})
+        server = SimpleNamespace(db_path=path, read_only=True)
+        with patch("requests.get", side_effect=AssertionError("date queries stay offline")):
+            alerts = app.read_api(server, "/api/shareholder-alerts?date=2026-10-29")
+            popup = app.read_api(server, "/api/stock-shareholders?code=000001&date=2026-10-29")
+        self.assertEqual(alerts["date"], "2026-10-29")
+        self.assertEqual([r["code"] for r in alerts["rows"]], ["000001", "000002"])
+        self.assertEqual(popup["date"], alerts["date"])
+        self.assertTrue(popup["rows"][0]["same_day_limit_up"])
+        for invalid in ("bad", "2026-02-30"):
+            for route in ("/api/shareholder-alerts?date=", "/api/stock-shareholders?code=000001&date="):
+                with self.assertRaises(ValueError):
+                    app.read_api(server, route + invalid)
 
     def test_second_scope_failure_never_replaces_first_scope(self):
         root = Path(__file__).parent / "test-data" / ("shareholder-fetch-" + uuid4().hex)

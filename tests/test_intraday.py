@@ -1,6 +1,7 @@
 """Wrong dates, partial sessions, cumulative volumes, offline reads and retries."""
 from contextlib import closing
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -11,6 +12,7 @@ import app
 import database as db
 import intraday as minute
 import intraday_sources as sources
+import provider
 from collect_intraday import collect, fetch_stock
 
 
@@ -193,6 +195,47 @@ class IntradayTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sources.save_catalog(self.path, [{"code": "000001", "name": "缺页"}], 2)
         self.assertEqual(len(minute.catalog(self.path)), 2)
+
+    def test_selected_day_broken_pool_is_cached_and_never_changes_closing_boards(self):
+        sources.save_catalog(self.path, [{"code": "600001", "name": "分时测试"}, {"code": "000001", "name": "破板测试"}], 2)
+        stamp = lambda clock: int(datetime.fromisoformat(f"2026-10-21T{clock}+08:00").timestamp())
+        raw = {"symbol": "000001.SZ", "stock_chi_name": "破板测试", "price": 10.5, "change_percent": .05,
+               "limit_up_days": 0, "first_limit_up": stamp("09:40:01"), "last_limit_up": stamp("09:40:01"),
+               "last_break_limit_up": stamp("09:41:05"), "break_limit_up_times": 1}
+        payload = {"code": 20000, "data": [raw, {**raw, "symbol": "600001.SS"},
+                    {**raw, "symbol": "000002.SZ", "stock_chi_name": "*ST测试"}, {**raw, "symbol": "300001.SZ"}]}
+        with patch.object(sources, "fetch_json", return_value=(payload, "synthetic.json")) as fetch:
+            overview = sources.collect_broken_pool(self.path, "2026-10-21")
+            self.assertEqual(fetch.call_args.args[1], {"pool_name": "limit_up_broken", "date": "2026-10-21"})
+            sources.collect_broken_pool(self.path, "2026-10-21")
+            self.assertEqual(fetch.call_count, 1, "confirmed historical metadata is reused without fetching more dates or minute data")
+        rows = {r["code"]: r for r in overview["rows"]}
+        self.assertEqual((rows["000001"]["stock_type"], rows["000001"]["boards"], rows["000001"]["status"]), ("broken", 0, "missing"))
+        self.assertEqual((rows["600001"]["stock_type"], rows["600001"]["boards"]), ("limit_up", 1), "a confirmed close supersedes a broken snapshot")
+        self.assertFalse(overview["broken_pool"]["needs_collection"])
+        self.assertTrue(minute.broken_pool_view(self.path, "2026-10-20")["needs_collection"])
+        with patch("requests.get", side_effect=AssertionError("GET must stay offline")):
+            detail = app.read_api(SimpleNamespace(db_path=self.path), "/api/intraday/stock?date=2026-10-21&code=000001")
+            app.read_api(SimpleNamespace(db_path=self.path), "/api/intraday?date=2026-10-21")
+        self.assertEqual((detail["stock"]["stock_type"], detail["stock"]["first_time"]), ("broken", "09:40:01"))
+        with closing(db.connect(self.path)) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM events").fetchone()[0], 2)
+
+    def test_broken_pool_rejects_wrong_days_sealed_rows_and_empty_retries(self):
+        sources.save_catalog(self.path, [{"code": "000001", "name": "破板测试"}], 1)
+        stamp = int(datetime.fromisoformat("2026-10-21T09:40:01+08:00").timestamp())
+        raw = {"symbol": "000001.SZ", "stock_chi_name": "破板测试", "price": 10.5, "change_percent": .05,
+               "limit_up_days": 0, "first_limit_up": stamp, "last_limit_up": stamp, "last_break_limit_up": stamp+60, "break_limit_up_times": 1}
+        valid = {"code": 20000, "data": [raw]}
+        with patch.object(sources, "fetch_json", return_value=(valid, "valid.json")):
+            sources.collect_broken_pool(self.path, "2026-10-21")
+        cached = minute.broken_pool_view(self.path, "2026-10-21")
+        for invalid in ({"code": 20000, "data": []}, {"code": 20000, "data": [{**raw, "first_limit_up": stamp-86400}]},
+                        {"code": 20000, "data": [{**raw, "limit_up_days": 1}]}, {"code": 20000, "data": [raw, raw]}):
+            with patch("live_pool.minute_refresh_due", return_value=True), patch.object(sources, "fetch_json", return_value=(invalid, "bad.json")):
+                with self.assertRaises((ValueError, provider.ProviderError)):
+                    sources.collect_broken_pool(self.path, "2026-10-21")
+            self.assertEqual(minute.broken_pool_view(self.path, "2026-10-21"), cached, "invalid metadata cannot replace a verified day")
 
     def test_st_is_excluded_from_lists_totals_cached_details_and_on_demand_collection(self):
         rows = [event(), {**event(), "code": "600002", "name": "历史普通股"},

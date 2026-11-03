@@ -186,6 +186,25 @@ $("minute-chart").scrollIntoView = () => {};
   assert.equal(context.minuteTimelineDayModel(standalone, {group: "first"}).rows.length, 1);
   assert.equal(context.minuteTimelineDayModel(standalone, {group: "multi"}).rows.length, 2);
   assert.deepEqual(Array.from(context.minuteTimelineDayModel(standalone, {kind: "volume"}).nodes.values(), node => node.code), [peer.code]);
+  const newTypes = {...data, events: [
+    ...["before", "at", "after", "unknown"].map((phase, index) => ({...peer, id: phase, time: `09:${40 + index}`, volume_phase: phase, label: `放量-${phase}`})),
+    {...row, id: "rise", kind: "rapid_up", time: "09:44", label: "快速涨幅", start_time: "09:41", change_pp: 3.2, duration_minutes: 3},
+    {...row, id: "fall", kind: "rapid_down", time: "09:48", label: "快速跌幅", start_time: "09:45", change_pp: -3.1, duration_minutes: 3}
+  ]};
+  assert.equal(context.minuteTimelineDayModel(newTypes).nodes.size, 6, "all new own-stock node types stay on the same time axis");
+  assert.equal(context.minuteTimelineDayModel(newTypes, {kind: "volume"}).nodes.size, 4, "all-volume includes unknown phase without guessing");
+  for (const phase of ["before", "at", "after"]) {
+    const filtered = context.minuteTimelineDayModel(newTypes, {kind: `volume_${phase}`});
+    assert.deepEqual(Array.from(filtered.nodes.values(), event => event.volume_phase), [phase]);
+    assert.match(context.minuteTimelineLaneHTML(filtered.rows[0], 120), new RegExp(`day-volume-${phase}`));
+  }
+  for (const kind of ["rapid_up", "rapid_down"]) {
+    const filtered = context.minuteTimelineDayModel(newTypes, {kind});
+    const event = [...filtered.nodes.values()][0];
+    assert.equal(filtered.nodes.size, 1);
+    assert.match(context.minuteTimelineLaneHTML(filtered.rows[0], 120), new RegExp(`day-${kind}`));
+    assert.match(context.minuteTimelineMetric(event), /[+-]3\.[12]0 个百分点.*09:4[15] → 09:4[48].*3 分钟/);
+  }
   const emptyStock = {...row, code: "600099", name: "缺失分时"};
   const partialModel = context.minuteTimelineDayModel({...data, pool: [row, emptyStock], events: [row]});
   assert.equal(partialModel.rows.length, 2, "a pool stock with no observed nodes is retained as an explicitly empty row");

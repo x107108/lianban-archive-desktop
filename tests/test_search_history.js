@@ -16,7 +16,7 @@ const context = vm.createContext({
   URLSearchParams, state:{requests:{},suggestions:[],recentStocks:[],tab:"date"}, $:element,
   localStorage:{getItem:key=>{if(denyStorage)throw Error("disabled");return storage.get(key)||null;},
                 setItem:(key,value)=>{if(denyStorage)throw Error("disabled");storage.set(key,value);}},
-  hideSuggestions(){}, clearError(){}, setStats(){}, updateURL(){}, renderStockProfile(){},
+  hideSuggestions(){}, clearError(){}, setStats(){}, updateURL(){}, renderStockProfile(){}, loadShareholderAlerts(){},
   setView(view){context.state.tab=view;}, loadingHTML:()=>"loading", emptyHTML:()=>"empty",
   showError(error){context.error=error.message;},
   renderStock(data){context.state.selectedStock=data.stock;},

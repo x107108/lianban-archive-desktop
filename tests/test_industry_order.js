@@ -23,7 +23,7 @@ const headers = html => [...html.matchAll(/data-group-label="([^"]+)"/g)].map(ma
 const cell = (html, height, tag) => html.split(`data-board-height="${height}"`)[1]
   .split(`data-group-label="${tag}"`)[1].split('<section class="matrix-cell')[0];
 const occurrences = (html, row) => (html.match(new RegExp(`data-card-code="${row.code}"`, "g")) || []).length;
-const expected = ["领涨甲", "领涨乙", "低位大", "首板大", "首板小", "独苗"];
+const expected = ["领涨甲", "领涨乙", "领涨独立", "低位大", "二板", "首板大", "首板小"];
 const full = context.renderIndustryColumns(rows, counts);
 assert.deepEqual(headers(full), [5, 3, 2, 1].flatMap(() => expected),
   "all height rows share leader-height-first, daily-count-second columns, with first-board-only sectors last");
@@ -38,7 +38,7 @@ assert.deepEqual(headers(first), ["领涨甲", "领涨乙", "低位大", "首板
   "selecting first boards retains hidden leaders and full-day counts rather than ranking visible first-board counts");
 assert.equal(occurrences(first, leaderA), 0, "ranking context cannot reintroduce a hidden height's stock");
 const five = context.renderIndustryColumns(rows.filter(row => row.boards === 5), counts);
-assert.deepEqual(headers(five), ["领涨甲", "领涨乙", "独苗"], "same-height leaders use full-day follower counts, with solitary stocks in the final column");
+assert.deepEqual(headers(five), ["领涨甲", "领涨乙", "领涨独立"], "same-height leaders use full-day follower counts and independent leaders retain their own concept columns");
 const comparison = html => html.split('<div class="board-comparison"')[1];
 assert.equal(comparison(context.renderIndustryColumns([...rows].reverse(), counts)), comparison(full),
   "input order cannot change sector positions or card ordering");
