@@ -15,16 +15,14 @@ def tag_name(value):
 
 
 def hierarchy(conn):
-    aliases, deleted = db.get_tag_aliases(conn), db.get_deleted_tag_keys(conn)
+    aliases = db.get_tag_aliases(conn)
     records = list(conn.execute("SELECT * FROM tag_nodes ORDER BY tag_key"))
     records.sort(key=lambda row: row["tag_key"] != aliases.get(row["tag_key"], row["name"]).casefold())
     nodes = {}
     for row in records:
         name = aliases.get(row["tag_key"], row["name"])
-        if name.casefold() in deleted:
-            continue
         parent = aliases.get(row["parent_key"], row["parent_key"] or "")
-        if parent.casefold() in deleted or parent.casefold() == name.casefold():
+        if parent.casefold() == name.casefold():
             parent = ""
         nodes.setdefault(name.casefold(), {"name": name, "parent": parent})
     for node in nodes.values():
@@ -62,6 +60,11 @@ def migrate_detached_names(conn):
             return
         aliases = db.get_tag_aliases(conn)
         if aliases:
+            # Released aliases of deleted tags must stay suppressed in provider
+            # defaults, even after their names become independently reusable.
+            deleted = db.get_deleted_tag_keys(conn)
+            conn.executemany("INSERT OR IGNORE INTO deleted_tags VALUES (?,?,?)",
+                             [(key, key, db.now_iso()) for key, name in aliases.items() if name.casefold() in deleted])
             nodes = hierarchy(conn)
             db.rewrite_tag_names(conn, aliases)
             _save_hierarchy(conn, nodes)
@@ -69,6 +72,22 @@ def migrate_detached_names(conn):
             conn.executemany("INSERT INTO tag_aliases VALUES (?,?)", {(name.casefold(), name) for name in aliases.values()})
             _bump_revision(conn)
         conn.execute("INSERT INTO settings VALUES ('tag_name_storage','\"detached-v1\"')")
+
+
+def migrate_deleted_names(conn):
+    """Clear legacy deleted assignments once, while allowing independent name reuse."""
+    with conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if conn.execute("SELECT 1 FROM settings WHERE key='tag_deletion_storage'").fetchone():
+            return
+        deleted = db.get_deleted_tag_keys(conn)
+        if deleted:
+            nodes = hierarchy(conn)
+            db.remove_tag_assignments(conn, deleted)
+            _save_hierarchy(conn, [{**node, "parent": "" if node["parent"].casefold() in deleted else node["parent"]}
+                                   for node in nodes if node["name"].casefold() not in deleted])
+            _bump_revision(conn)
+        conn.execute("INSERT INTO settings VALUES ('tag_deletion_storage','\"reusable-v1\"')")
 
 
 def descendants(nodes, name):
@@ -140,8 +159,8 @@ def save_node(conn, name, parent, revision, action="create"):
             name = group["name"]
         else:
             canonical = db.get_tag_aliases(conn).get(name.casefold(), name)
-            if canonical.casefold() != name.casefold() or canonical.casefold() in db.get_deleted_tag_keys(conn):
-                raise ValueError("该名称已合并或删除，请使用其他名称")
+            if canonical.casefold() != name.casefold():
+                raise ValueError("该名称已合并，请使用其他名称")
         if parent:
             target = groups.get(parent.casefold())
             if not target:
@@ -177,14 +196,11 @@ def save_stock_tag_paths(conn, code, labels, revision, use_source=False, alias_r
         groups, _ = _inventory(conn)
         nodes = {node["name"].casefold(): node for node in hierarchy(conn)}
         original = dict(nodes)
-        deleted = db.get_deleted_tag_keys(conn)
         selected = []
         for path in paths:
             parent = ""
             for index, entered in enumerate(path):
                 key = entered.casefold()
-                if key in deleted:
-                    raise ValueError(f"“{entered}”已被整体删除，请使用其他名称")
                 existing = nodes.get(key) or groups.get(key)
                 name = existing["name"] if existing else entered
                 if index and existing and nodes.get(key, {}).get("parent", "").casefold() != parent.casefold():
@@ -227,8 +243,6 @@ def rename(conn, source, target, revision, merge=False):
             target = destination["name"]
         aliases = db.get_tag_aliases(conn)
         previous_target = aliases.get(target.casefold(), target)
-        if previous_target.casefold() in db.get_deleted_tag_keys(conn):
-            raise ValueError("目标标签已被整体删除，请使用其他标签名称")
         if previous_target.casefold() not in (source.casefold(), target.casefold()):
             raise ValueError(f"该名称已合并到“{previous_target}”，请使用该标签名称")
         if source != target:
@@ -319,11 +333,12 @@ def delete_tag(conn, name, revision, confirm=False):
         children = [node for node in nodes if node["parent"].casefold() == name.casefold()]
         if not confirm:
             return {"needs_confirmation": True, "name": name, "count": count, "revision": actual, "children": len(children)}
-        # Keep original stock/source records intact; the canonical deletion also
-        # covers merged aliases and future provider refreshes.
-        conn.execute("INSERT INTO deleted_tags VALUES (?,?,?)", (name.casefold(), name, db.now_iso()))
+        # Source suppression prevents provider refreshes from reviving old members;
+        # personal assignments and name aliases are cleared, so reuse starts fresh.
+        conn.execute("INSERT INTO deleted_tags VALUES (?,?,?) ON CONFLICT(tag_key) DO UPDATE SET name=excluded.name,deleted_at=excluded.deleted_at",
+                     (name.casefold(), name, db.now_iso()))
+        db.remove_tag_assignments(conn, {name.casefold()})
         parent = next((node["parent"] for node in nodes if node["name"].casefold() == name.casefold()), "")
         _save_hierarchy(conn, [{**node, "parent": parent if node in children else node["parent"]} for node in nodes if node["name"].casefold() != name.casefold()])
-        conn.execute("INSERT INTO settings VALUES ('tag_alias_revision','1') ON CONFLICT(key) "
-                     "DO UPDATE SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT)")
+        _bump_revision(conn)
         return {"needs_confirmation": False, "name": name, "count": count, "deleted": True}

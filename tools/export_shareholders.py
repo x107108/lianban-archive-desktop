@@ -13,10 +13,10 @@ def export(source, target, source_commit):
         conn.row_factory = sqlite3.Row
         conn.execute('BEGIN')
         profiles = [dict(row) for row in conn.execute(
-            'SELECT p.code,p.scope,p.report_date,p.source,p.fetched_at,p.ratio_checked FROM shareholder_profiles p '
+            'SELECT p.code,p.scope,p.report_date,p.source,p.fetched_at,p.ratio_checked,p.shares_checked FROM shareholder_profiles p '
             'JOIN stocks s ON s.code=p.code ORDER BY p.code,p.scope')]
         rows = [dict(row) for row in conn.execute(
-            'SELECT p.code,p.scope,p.holder_key,p.holder_name,p.holder_type,p.report_date,p.holding_ratio '
+            'SELECT p.code,p.scope,p.holder_key,p.holder_name,p.holder_type,p.report_date,p.holding_ratio,p.holding_shares '
             'FROM stock_shareholders p JOIN stocks s ON s.code=p.code ORDER BY p.code,p.scope,p.holder_key')]
         controls = [dict(row) for row in conn.execute('SELECT code,source,fetched_at FROM stock_control_profiles ORDER BY code')]
         control_rows = [dict(row) for row in conn.execute('SELECT code,kind,holder_key,holder_name,holder_type,via_name,source_url,fetched_at FROM stock_control_owners ORDER BY code,kind,holder_key')]

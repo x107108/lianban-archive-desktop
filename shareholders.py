@@ -27,12 +27,12 @@ BATCH_SIZE = 100
 RELATIONS_SQL = """WITH relations AS (
     SELECT code,scope AS kind,holder_key,holder_name,
            shareholder_type(holder_key,holder_type) AS holder_type,
-           report_date,holding_ratio,'' AS via_name,'' AS source_url
+           report_date,holding_ratio,holding_shares,'' AS via_name,'' AS source_url
     FROM stock_shareholders
     UNION ALL
     SELECT code,kind,holder_key,holder_name,
            shareholder_type(holder_key,holder_type),
-           NULL AS report_date,NULL AS holding_ratio,via_name,source_url
+           NULL AS report_date,NULL AS holding_ratio,NULL AS holding_shares,via_name,source_url
     FROM stock_control_owners
 ) """
 
@@ -71,9 +71,17 @@ def normalize_rows(payload, requested, today, scope="total"):
             ratio = float(ratio)
             if not math.isfinite(ratio) or not 0 <= ratio <= 100:
                 raise ValueError("股东持股比例无效")
+        shares = row.get("HOLD_NUM")
+        if shares is not None:
+            if isinstance(shares, bool):
+                raise ValueError("股东持股数无效")
+            shares = float(shares)
+            if not shares.is_integer() or not 0 <= shares < 2**53:
+                raise ValueError("股东持股数无效")
+            shares = int(shares)
         records.append({"code": code, "holder_name": name, "holder_key": key,
                         "holder_type": row.get("HOLDER_NEWTYPE") or "未分类", "report_date": report_date,
-                        "holding_ratio": ratio})
+                        "holding_ratio": ratio, "holding_shares": shares})
     return records, pages, count
 
 
@@ -83,7 +91,7 @@ def fetch_batch(codes, scope, raw_dir):
     quoted = ",".join(f'"{secucode(code)}"' for code in codes)
     today = datetime.now(db.TZ).date().isoformat()
     eligible = f"(END_DATE<='{today}')"
-    fields = "SECUCODE,SECURITY_CODE,END_DATE,HOLDER_NAME,HOLDER_NEWTYPE,NOTICE_DATE"
+    fields = "SECUCODE,SECURITY_CODE,END_DATE,HOLDER_NAME,HOLDER_NEWTYPE,NOTICE_DATE,HOLD_NUM"
     fields += ",HOLD_RATIO" if scope == "total" else ",FREE_HOLDNUM_RATIO"
     params = {"reportName": REPORTS[scope], "columns": fields,
               "filter": f'(SECUCODE in ({quoted}))(IS_MAX_REPORTDATE="1")' + eligible,
@@ -127,42 +135,54 @@ def fetch_batch(codes, scope, raw_dir):
     return records
 
 
-def save_batch(conn, codes, records_by_scope):
+def save_batch(conn, codes, records_by_scope, *, keep_unavailable=False):
     fetched_at = db.now_iso()
+    latest_by_scope = {}
+    for scope, records in records_by_scope.items():
+        latest = latest_by_scope[scope] = {}
+        for row in records:
+            latest[row["code"]] = max(latest.get(row["code"], ""), row["report_date"])
     # Both scopes of a batch are fetched before replacing any cached profiles.
     with conn:
+        placeholders = ",".join("?" for _ in codes)
+        unavailable = {old["code"] for old in conn.execute(
+            f"SELECT code,scope,report_date FROM shareholder_profiles WHERE code IN ({placeholders}) AND report_date IS NOT NULL", codes)
+            if old["scope"] in latest_by_scope and latest_by_scope[old["scope"]].get(old["code"], "") < old["report_date"]}
+        if unavailable and not keep_unavailable:
+            raise ValueError(f"{min(unavailable)} 股东资料缺失或倒退，保留缓存")
+        eligible = set(codes) - unavailable
         for scope, records in records_by_scope.items():
-            latest = {}
-            for row in records:
-                latest[row["code"]] = max(latest.get(row["code"], ""), row["report_date"])
-            for code in codes:
-                old = conn.execute("SELECT report_date FROM shareholder_profiles WHERE code=? AND scope=?", (code, scope)).fetchone()
-                if old and old[0] and (code not in latest or latest[code] < old[0]):
-                    raise ValueError(f"{code} 股东资料缺失或倒退，保留缓存")
+            latest = latest_by_scope[scope]
+            for code in eligible:
                 conn.execute("DELETE FROM stock_shareholders WHERE code=? AND scope=?", (code, scope))
-                conn.execute("INSERT INTO shareholder_profiles(code,scope,report_date,source,fetched_at,ratio_checked) VALUES (?,?,?,?,?,1) ON CONFLICT(code,scope) DO UPDATE SET "
-                             "report_date=excluded.report_date,source=excluded.source,fetched_at=excluded.fetched_at,ratio_checked=1",
+                conn.execute("INSERT INTO shareholder_profiles(code,scope,report_date,source,fetched_at,ratio_checked,shares_checked) VALUES (?,?,?,?,?,1,1) ON CONFLICT(code,scope) DO UPDATE SET "
+                             "report_date=excluded.report_date,source=excluded.source,fetched_at=excluded.fetched_at,ratio_checked=1,shares_checked=1",
                              (code, scope, latest.get(code), SOURCE, fetched_at))
-            conn.executemany("INSERT OR IGNORE INTO stock_shareholders(code,scope,holder_key,holder_name,holder_type,report_date,holding_ratio) VALUES (?,?,?,?,?,?,?)",
-                [(r["code"], scope, r["holder_key"], r["holder_name"], r["holder_type"], r["report_date"], r.get("holding_ratio"))
-                 for r in records if r["report_date"] == latest[r["code"]]])
+            conn.executemany("INSERT OR IGNORE INTO stock_shareholders(code,scope,holder_key,holder_name,holder_type,report_date,holding_ratio,holding_shares) VALUES (?,?,?,?,?,?,?,?)",
+                [(r["code"], scope, r["holder_key"], r["holder_name"], r["holder_type"], r["report_date"], r.get("holding_ratio"), r.get("holding_shares"))
+                 for r in records if r["code"] in eligible and r["report_date"] == latest[r["code"]]])
+    return unavailable
 
 
 def refresh(path=db.DEFAULT_DB):
     cutoff = (datetime.now(db.TZ) - timedelta(hours=24)).isoformat(timespec="seconds")
     with closing(db.connect(path)) as conn:
         codes = [r[0] for r in conn.execute("SELECT s.code FROM stocks s LEFT JOIN shareholder_profiles p ON p.code=s.code "
-                "GROUP BY s.code HAVING COUNT(p.scope)<2 OR MIN(p.fetched_at)<? OR MIN(p.ratio_checked)=0 ORDER BY s.code", (cutoff,))]
+                "GROUP BY s.code HAVING COUNT(p.scope)<2 OR MIN(p.fetched_at)<? OR MIN(p.ratio_checked)=0 "
+                "OR MIN(p.shares_checked)=0 ORDER BY s.code", (cutoff,))]
         requested = conn.execute("SELECT COUNT(*) FROM stocks").fetchone()[0]
         db.set_settings(conn, shareholder_status="updating", shareholder_completed=0, shareholder_pending=len(codes))
+    unavailable = set()
     for offset in range(0, len(codes), BATCH_SIZE):
         batch = codes[offset:offset + BATCH_SIZE]
         records = {scope: fetch_batch(batch, scope, Path(path).resolve().parent / "shareholders") for scope in REPORTS}
         with closing(db.connect(path)) as conn:
-            save_batch(conn, batch, records)
-            db.set_settings(conn, shareholder_completed=offset + len(batch), shareholder_pending=len(codes))
+            unavailable.update(save_batch(conn, batch, records, keep_unavailable=True))
+            db.set_settings(conn, shareholder_completed=offset + len(batch) - len(unavailable), shareholder_pending=len(codes))
         if offset + BATCH_SIZE < len(codes):
             time.sleep(0.3)
+    if unavailable:
+        raise ValueError(f"{len(unavailable)} 只股票股东资料缺失或倒退，已保留缓存")
     with closing(db.connect(path)) as conn:
         db.set_settings(conn, shareholder_fetched_at=db.now_iso(), shareholder_status="current",
                         shareholder_error=None, shareholder_requested=requested)
@@ -220,10 +240,13 @@ def stock_view(conn, code, *, day=None, include_live=True, now=None):
     own = {}
     own_holders = {scope: [] for scope in REPORTS}
     for row in conn.execute(RELATIONS_SQL + "SELECT * FROM relations WHERE code=? ORDER BY kind,holder_name", (code,)):
-        own.setdefault(row["holder_key"], []).append({"kind": row["kind"], "via_name": row["via_name"], "source_url": row["source_url"]})
+        relation = {"kind": row["kind"], "via_name": row["via_name"], "source_url": row["source_url"]}
         if row["kind"] in REPORTS:
+            holding = {"holding_ratio": row["holding_ratio"], "holding_shares": row["holding_shares"]}
+            relation.update(date=row["report_date"], **holding)
             own_holders[row["kind"]].append({"name": row["holder_name"], "type": row["holder_type"],
-                                            "report_date": row["report_date"], "holding_ratio": row["holding_ratio"]})
+                                            "report_date": row["report_date"], **holding})
+        own.setdefault(row["holder_key"], []).append(relation)
     for holders in own_holders.values():
         holders.sort(key=lambda holder: (holder["holding_ratio"] is None, -(holder["holding_ratio"] or 0), holder["name"]))
     controls = [dict(r) for r in conn.execute("SELECT kind,holder_name AS name,holder_type AS type,via_name,source_url,fetched_at "
@@ -242,7 +265,8 @@ def stock_view(conn, code, *, day=None, include_live=True, now=None):
         holder = peer["holders"].setdefault(row["holder_key"], {"name": row["holder_name"], "type": row["holder_type"],
                            "reports": [], "relations": [], "own_relations": own[row["holder_key"]]})
         if row["kind"] in REPORTS:
-            holder["reports"].append({"scope": row["kind"], "date": row["report_date"]})
+            holder["reports"].append({"scope": row["kind"], "date": row["report_date"],
+                                      "holding_shares": row["holding_shares"], "holding_ratio": row["holding_ratio"]})
         else:
             holder["type"] = row["holder_type"]
             holder["relations"].append({"kind": row["kind"], "via_name": row["via_name"], "source_url": row["source_url"]})

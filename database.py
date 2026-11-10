@@ -77,12 +77,13 @@ def connect(path=DEFAULT_DB):
             code TEXT NOT NULL, scope TEXT NOT NULL, report_date TEXT,
             source TEXT NOT NULL, fetched_at TEXT NOT NULL,
             ratio_checked INTEGER NOT NULL DEFAULT 0,
+            shares_checked INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY(code,scope)
         );
         CREATE TABLE IF NOT EXISTS stock_shareholders (
             code TEXT NOT NULL, scope TEXT NOT NULL, holder_key TEXT NOT NULL,
             holder_name TEXT NOT NULL, holder_type TEXT NOT NULL, report_date TEXT NOT NULL,
-            holding_ratio REAL,
+            holding_ratio REAL, holding_shares INTEGER,
             PRIMARY KEY(code,scope,holder_key)
         );
         CREATE INDEX IF NOT EXISTS shareholders_holder ON stock_shareholders(holder_key,code);
@@ -147,10 +148,13 @@ def connect(path=DEFAULT_DB):
             full_day INTEGER NOT NULL, PRIMARY KEY(date,code)
         );
     """)
-    if "holding_ratio" not in {row[1] for row in conn.execute("PRAGMA table_info(stock_shareholders)")}:
-        conn.execute("ALTER TABLE stock_shareholders ADD COLUMN holding_ratio REAL")
-    if "ratio_checked" not in {row[1] for row in conn.execute("PRAGMA table_info(shareholder_profiles)")}:
-        conn.execute("ALTER TABLE shareholder_profiles ADD COLUMN ratio_checked INTEGER NOT NULL DEFAULT 0")
+    for table, columns in (("stock_shareholders", {"holding_ratio": "REAL", "holding_shares": "INTEGER"}),
+                           ("shareholder_profiles", {"ratio_checked": "INTEGER NOT NULL DEFAULT 0",
+                                                     "shares_checked": "INTEGER NOT NULL DEFAULT 0"})):
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for column, definition in columns.items():
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
     if conn.execute("SELECT 1 FROM settings WHERE key='stock_note_history'").fetchone() is None:
         with conn:
             conn.execute("INSERT INTO stock_note_entries(code,occurred_at,content,updated_at) "
@@ -168,6 +172,9 @@ def connect(path=DEFAULT_DB):
     if conn.execute("SELECT 1 FROM settings WHERE key='tag_name_storage'").fetchone() is None:
         from tag_management import migrate_detached_names
         migrate_detached_names(conn)
+    if conn.execute("SELECT 1 FROM settings WHERE key='tag_deletion_storage'").fetchone() is None:
+        from tag_management import migrate_deleted_names
+        migrate_deleted_names(conn)
     return conn
 
 
@@ -308,11 +315,17 @@ def save_default_tags(conn, records, source):
 
 def default_tag_map(conn, codes, industries):
     if get_settings(conn).get("default_tag_mode") != "concept_intersection":
-        return {code: {"tags": [industry] if industry else [], "source": "申万一级行业", "fetched_at": None}
+        defaults = {code: {"tags": [industry] if industry else [], "source": "申万一级行业", "fetched_at": None}
                 for code, industry in industries.items()}
-    return {r["code"]: {"tags": json.loads(r["tags_json"]), "source": r["source"], "fetched_at": r["fetched_at"]}
-            for r in conn.execute("SELECT * FROM stock_default_tags WHERE code IN (" +
-                                  ",".join("?" for _ in codes) + ")", codes)} if codes else {}
+    else:
+        defaults = {r["code"]: {"tags": json.loads(r["tags_json"]), "source": r["source"], "fetched_at": r["fetched_at"]}
+                    for r in conn.execute("SELECT * FROM stock_default_tags WHERE code IN (" +
+                                          ",".join("?" for _ in codes) + ")", codes)} if codes else {}
+    aliases, deleted = get_tag_aliases(conn), get_deleted_tag_keys(conn)
+    for profile in defaults.values():
+        profile["tags"] = [tag for tag in profile["tags"] if tag.casefold() not in deleted
+                           and aliases.get(tag.casefold(), tag).casefold() not in deleted]
+    return defaults
 
 
 def effective_stock_tags(custom, defaults, excluded=(), merge_defaults=False):
@@ -338,6 +351,7 @@ def get_tag_aliases(conn):
 
 
 def get_deleted_tag_keys(conn):
+    """Suppress removed provider defaults; these keys never reserve user tag names."""
     return {row[0] for row in conn.execute("SELECT tag_key FROM deleted_tags")}
 
 
@@ -392,6 +406,26 @@ def rewrite_tag_names(conn, names):
                      (code, json.dumps(excluded, ensure_ascii=False)))
 
 
+def remove_tag_assignments(conn, keys):
+    """Remove deleted personal memberships and aliases inside the caller's transaction."""
+    aliases = get_tag_aliases(conn)
+    for row in conn.execute("SELECT * FROM stock_tag_overrides WHERE tags_json IS NOT NULL").fetchall():
+        original = json.loads(row["tags_json"])
+        remaining = [tag for tag in original if aliases.get(tag.casefold(), tag).casefold() not in keys]
+        if remaining != original:
+            conn.execute("UPDATE stock_tag_overrides SET tags_json=?,revision=revision+1,updated_at=? WHERE code=?",
+                         (json.dumps(remaining, ensure_ascii=False), now_iso(), row["code"]))
+    for row in conn.execute("SELECT * FROM stock_tag_exclusions").fetchall():
+        original = json.loads(row["tags_json"])
+        remaining = [tag for tag in original if aliases.get(tag.casefold(), tag).casefold() not in keys]
+        if remaining != original:
+            conn.execute("UPDATE stock_tag_exclusions SET tags_json=? WHERE code=?",
+                         (json.dumps(remaining, ensure_ascii=False), row["code"]))
+    for key, name in aliases.items():
+        if key in keys or name.casefold() in keys:
+            conn.execute("DELETE FROM tag_aliases WHERE tag_key=?", (key,))
+
+
 def tag_alias_revision(conn):
     return get_settings(conn).get("tag_alias_revision", 0)
 
@@ -421,14 +455,13 @@ def enrich_industries(conn, rows):
     exclusions = {r["code"]: json.loads(r["tags_json"]) for r in conn.execute(
         "SELECT * FROM stock_tag_exclusions WHERE code IN (" + ",".join("?" for _ in codes) + ")", codes)}
     aliases = get_tag_aliases(conn)
-    deleted = get_deleted_tag_keys(conn)
     for row in rows:
         override = overrides.get(row["code"])
         customized = bool(override and override["tags_json"] is not None)
         default = defaults.get(row["code"], {})
         custom = json.loads(override["tags_json"]) if customized else None
-        row.update(tags=named_stock_tags(effective_stock_tags(custom, default.get("tags", []), exclusions.get(row["code"], []), merge_defaults), aliases, deleted),
-                   source_tags=named_stock_tags(default.get("tags", []), aliases, deleted), tags_source=default.get("source"),
+        row.update(tags=named_stock_tags(effective_stock_tags(custom, default.get("tags", []), exclusions.get(row["code"], []), merge_defaults), aliases),
+                   source_tags=named_stock_tags(default.get("tags", []), aliases), tags_source=default.get("source"),
                    tags_as_of=default.get("fetched_at"),
                    tags_customized=customized, tags_revision=override["revision"] if override else 0)
     notes = {r["code"]: r["content"] for r in conn.execute(
@@ -459,12 +492,11 @@ def get_stock_tags(conn, code):
     excluded = json.loads(hidden[0]) if hidden else []
     merge_defaults = get_settings(conn).get("default_tag_mode") == "concept_intersection"
     aliases = get_tag_aliases(conn)
-    deleted = get_deleted_tag_keys(conn)
     return {"code": code, "name": stock["name"], "source_tag": source_tag,
-            "source_tags": named_stock_tags(source_tags, aliases, deleted), "tags_source": default.get("source"), "tags_as_of": default.get("fetched_at"),
-            "custom_tags": named_stock_tags(custom_tags, aliases, deleted), "excluded_tags": excluded, "merge_defaults": merge_defaults,
+            "source_tags": named_stock_tags(source_tags, aliases), "tags_source": default.get("source"), "tags_as_of": default.get("fetched_at"),
+            "custom_tags": named_stock_tags(custom_tags, aliases), "excluded_tags": excluded, "merge_defaults": merge_defaults,
             "tag_alias_revision": tag_alias_revision(conn),
-            "tags": named_stock_tags(effective_stock_tags(custom_tags if customized else None, source_tags, excluded, merge_defaults), aliases, deleted),
+            "tags": named_stock_tags(effective_stock_tags(custom_tags if customized else None, source_tags, excluded, merge_defaults), aliases),
             "customized": customized, "revision": override["revision"] if override else 0,
             "blacklisted": conn.execute("SELECT 1 FROM stock_blacklist WHERE code=?", (code,)).fetchone() is not None}
 
@@ -495,9 +527,6 @@ def save_stock_tags(conn, code, tags, revision, use_source=False, alias_revision
             clean.append(tag)
     aliases = get_tag_aliases(conn)
     clean = named_stock_tags(clean, aliases)
-    deleted = get_deleted_tag_keys(conn)
-    if not use_source and any(tag.casefold() in deleted for tag in clean):
-        raise ValueError("该标签已被整体删除，请使用其他标签名称")
     excluded = []
     if current["merge_defaults"] and not use_source:
         source = default_tag_map(conn, [code], {}).get(code, {}).get("tags", [])

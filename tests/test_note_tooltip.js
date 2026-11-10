@@ -7,7 +7,7 @@ const context=vm.createContext({$:()=>tooltip,state:{requests:{}},URLSearchParam
   window:{innerWidth:1236,innerHeight:1044},
   request:(route,channel)=>new Promise((resolve,reject)=>pending.push({route,channel,resolve,reject}))});
 vm.runInContext(source.slice(source.indexOf("function escapeHTML"),source.indexOf("function textValue")),context);
-vm.runInContext(source.slice(source.indexOf("function hideStockNoteTooltip"),source.indexOf("async function openStockNoteEditor")),context);
+vm.runInContext(source.slice(source.indexOf("function hideStockNoteTooltip"),source.indexOf("function openStockEditor")),context);
 function anchor(code,filled=true){
   const attributes={};
   return {attributes,dataset:{editStockNote:code},isConnected:true,classList:{contains:()=>filled},

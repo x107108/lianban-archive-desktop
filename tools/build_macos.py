@@ -23,7 +23,7 @@ def build(architecture, output):
         raise ValueError('Mac Python download checksum mismatch; retain file for inspection.')
     bundle = json.loads((ROOT / 'BUNDLE.json').read_text())
     names = {name for name in bundle['sha256'] if not name.startswith('vendor/python-')}
-    names.update(('README.md', 'AI_INSTALL.md', 'THIRD_PARTY_NOTICES.md', 'macos-runtimes.json'))
+    names.update(('README.md', 'AI_INSTALL.md', 'MACOS.md', 'THIRD_PARTY_NOTICES.md', 'macos-runtimes.json'))
     files = {name: (ROOT / name).read_bytes() for name in names}
     runtime_name = 'vendor/' + runtime.name
     files[runtime_name] = runtime.read_bytes()

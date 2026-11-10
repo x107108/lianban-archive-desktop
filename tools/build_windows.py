@@ -7,7 +7,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 version = json.loads((ROOT / 'VERSION.json').read_text(encoding='utf-8'))['version']
-output = ROOT / '.build/release-20261103'
+output = ROOT / '.build' / ('release-' + ''.join(version.split('.')[:3]))
 output.mkdir(parents=True, exist_ok=True)
 target = output / f'lianban-archive-desktop-v{version}.zip'
 names = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT).decode('utf-8').strip('\0').split('\0')

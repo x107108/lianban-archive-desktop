@@ -24,6 +24,8 @@ def serve(port, no_updates=False):
     published_tags.initialize_catalog(ROOT/'data/archive.sqlite3')
     import shareholder_seed
     shareholder_seed.apply(ROOT/'data/archive.sqlite3')
+    import seven_seed
+    seven_seed.apply(ROOT/'data/archive.sqlite3')
     session_file = ROOT/'data/desktop-session.json'
     session = {'pid': os.getpid(), 'port': port, 'project_key': PROJECT_KEY,
                'instance_id': secrets.token_hex(16), 'token': secrets.token_hex(32), 'state': 'starting'}

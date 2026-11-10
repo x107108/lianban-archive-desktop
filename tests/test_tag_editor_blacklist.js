@@ -10,13 +10,13 @@ let stored = false, pending = null, fail = false, dateRenders = 0;
 const board = {scrollLeft: 340};
 const element = id => {
   if (!elements.has(id)) elements.set(id, {value: "", disabled: false, checked: false, hidden: false,
-    setAttribute(name,value) {this[name]=value;}, removeAttribute(name) {delete this[name];},
+    setCustomValidity() {}, setAttribute(name,value) {this[name]=value;}, removeAttribute(name) {delete this[name];},
     querySelector: () => board, querySelectorAll: () => [], reportValidity: () => true,
     showModal() { this.open = true; }, close() { this.open = false; }});
   return elements.get(id);
 };
 const context = vm.createContext({
-  URLSearchParams, $: element, state: {tab: "date", requests: {}, meta: {capabilities: {edit_tags: true, edit_blacklist: true}},
+  URLSearchParams, clearTimeout, $: element, state: {tab: "date", requests: {}, meta: {capabilities: {edit_tags: true, edit_blacklist: true}},
     dateData: {rows: [{code:"600668",blacklisted:false},{code:"600802",blacklisted:false}],
       suspended_rows: [{code:"600668",blacklisted:false}]},
     stockData: {stock: {code:"600668",blacklisted:false}}, selectedStock: {code:"600668",blacklisted:false}},
@@ -37,8 +37,9 @@ load("function canEditBlacklist", "function blacklistError");
 load("function stockTags", "function canEditTags");
 load("function canEditTags", "function renderTagEditor");
 load("function renderTagEditor", "function renderTable");
+context.loadEditorNotes = async () => {};
 (async () => {
-  await context.openTagEditor("600668");
+  await context.openStockEditor("600668");
   assert.equal(element("tag-blacklist").checked, false);
   assert.equal(element("tag-blacklist").disabled, false);
   context.state.tagDraft = ["未保存的标签"];
@@ -48,10 +49,10 @@ load("function renderTagEditor", "function renderTable");
   const save = context.changeTagBlacklist();
   assert.equal(element("tag-blacklist").disabled, true);
   assert.equal(element("save-tags").disabled, true);
-  context.closeTagEditor();
+  context.closeStockEditor();
   assert.equal(element("tag-dialog").open, true, "closing is blocked during persistence");
   await context.changeTagBlacklist();
-  await context.saveTagEditor({preventDefault(){}});
+  await context.finishStockEditor(true);
   assert.equal(calls.filter(call => call.body).length, 1, "no duplicate or tag write while blacklist is saving");
   finish(); await save; pending = null;
   assert.equal(stored, true);
@@ -63,8 +64,8 @@ load("function renderTagEditor", "function renderTable");
   assert.equal(dateRenders, 1);
   assert.equal(board.scrollLeft, 340, "matrix scroll stays in place");
   assert.deepEqual(context.state.tagDraft, ["未保存的标签"], "checkbox does not save or overwrite tag drafts");
-  context.closeTagEditor();
-  await context.openTagEditor("600668");
+  context.closeStockEditor();
+  await context.openStockEditor("600668");
   assert.equal(element("tag-blacklist").checked, true, "reopening reads persistent membership");
   context.state.tab = "stock";
   element("tag-blacklist").checked = false;

@@ -33,8 +33,8 @@ class ShareholderSeedTests(unittest.TestCase):
         with gzip.open(shareholder_seed.RESOURCE, 'rt', encoding='utf-8') as handle:
             seed = json.load(handle)
         self.assertEqual(set(seed), {'source_commit', 'exported_at', 'profiles', 'rows', 'control_profiles', 'control_rows', 'subsidiaries'})
-        profile_fields = {'code', 'scope', 'report_date', 'source', 'fetched_at', 'ratio_checked'}
-        record_fields = {'code', 'scope', 'holder_key', 'holder_name', 'holder_type', 'report_date', 'holding_ratio'}
+        profile_fields = {'code', 'scope', 'report_date', 'source', 'fetched_at', 'ratio_checked', 'shares_checked'}
+        record_fields = {'code', 'scope', 'holder_key', 'holder_name', 'holder_type', 'report_date', 'holding_ratio', 'holding_shares'}
         self.assertTrue(all(set(row) == profile_fields for row in seed['profiles']))
         self.assertTrue(all(set(row) == record_fields for row in seed['rows']))
         profiles = {(row['code'], row['scope']): row for row in seed['profiles']}
@@ -60,6 +60,7 @@ class ShareholderSeedTests(unittest.TestCase):
         self.assertEqual(shareholder_seed.apply(path),0)
         with closing(db.connect(path)) as conn, conn:
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM stock_shareholders WHERE holding_ratio IS NOT NULL').fetchone()[0],sum(r['holding_ratio'] is not None for r in records))
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM stock_shareholders WHERE holding_shares IS NOT NULL').fetchone()[0],sum(r['holding_shares'] is not None for r in records))
             self.assertEqual(conn.execute('SELECT MIN(ratio_checked) FROM shareholder_profiles').fetchone()[0],1)
             conn.execute('UPDATE stock_shareholders SET holding_ratio=99')
         shareholder_seed.apply(path)

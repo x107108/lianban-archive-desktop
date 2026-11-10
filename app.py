@@ -8,6 +8,7 @@ from contextlib import closing
 from datetime import date, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from time import monotonic
 from urllib.parse import parse_qs, urlparse
 
 import database as db
@@ -16,12 +17,14 @@ import industry
 import concept_tags
 import registration
 import shareholders
+import market_values
 import control_owners
 import subsidiaries
 import live_update
 import live_pool
 import suspension
 import intraday
+import seven_boards
 import tag_management
 
 WEB = Path(__file__).resolve().parent / "web"
@@ -48,6 +51,9 @@ def read_api(server, path):
         return intraday.overview(server.db_path, arg("date") or None, include_live=editable)
     if parsed.path == "/api/intraday/stock":
         return intraday.stock_view(server.db_path, valid_day(arg("date")), arg("code"), include_live=editable)
+    if parsed.path == "/api/seven-boards":
+        return seven_boards.view(server.db_path, exclude_st=arg("exclude_st", "1") != "0",
+                                 exclude_gem=arg("exclude_gem", "1") != "0", include_notes=editable)
     if parsed.path == "/api/intraday/timeline":
         import intraday_timeline
         exclude_gem = arg("exclude_gem", "1")
@@ -64,6 +70,8 @@ def read_api(server, path):
         if hasattr(server, "concept_refresher"):
             server.concept_refresher.maybe_refresh()
     with closing(db.connect(server.db_path)) as conn:
+        if parsed.path == "/api/stock-market-values":
+            return market_values.stock_view(conn, arg("code"), valid_day(arg("date")), refresh=editable)
         if parsed.path == "/api/stock-shareholders":
             return shareholders.stock_view(conn, arg("code"), day=valid_day(arg("date")) if arg("date") else None, include_live=editable)
         if parsed.path == "/api/shareholder-alerts":
@@ -184,7 +192,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         if not parsed.path.startswith("/api/"):
-            if parsed.path in ("/", "/index.html", "/styles.css", "/app.js", "/favicon.ico") or parsed.path in FONT_ASSETS | IMAGE_ASSETS:
+            if parsed.path in ("/", "/index.html", "/styles.css", "/boardui-home.css", "/ui-theme.js", "/app.js", "/favicon.ico") or parsed.path in FONT_ASSETS | IMAGE_ASSETS:
                 return super().do_GET()
             return self.reply({"error": "页面不存在"}, 404)
         try:
@@ -287,7 +295,17 @@ def main():
         with closing(db.connect(args.db)) as conn:
             server.suspension_refresher.maybe_refresh(db.meta(conn)["latest_date"])
     after_archive_update()
-    server.archive_refresher = live_update.Refresher(args.db, on_update=after_archive_update)
+    last_seven_refresh = float("-inf")
+
+    def refresh_after_update():
+        nonlocal last_seven_refresh
+        after_archive_update()
+        now = monotonic()
+        if now - last_seven_refresh >= 30 * 60:
+            last_seven_refresh = now
+            seven_boards.collect(args.db, recent=True)
+
+    server.archive_refresher = live_update.Refresher(args.db, on_update=refresh_after_update)
     server.archive_refresher.start()
     server.live_refresher = live_pool.Refresher(args.db)
     server.live_refresher.start()

@@ -12,6 +12,7 @@ names.update(str(p.relative_to(ROOT)).replace('\\','/') for p in (ROOT/'web').rg
 names.update(str(p.relative_to(ROOT)).replace('\\','/') for directory in ('vendor','resources') for p in (ROOT/directory).rglob('*') if p.is_file())
 names.update(['desktop.py','update_notices.py','published_tags.py','shareholder_seed.py','realtime.py','VERSION.json','setup_shared.py','launcher.ps1','install.cmd','start_demo.cmd','stop_demo.cmd','verify.cmd','SOURCE_BASELINE.json','requirements.txt'])
 names.update(['personal_data.py', 'launcher_macos.py', 'launcher-macos.command', 'macos_upgrade.py', 'macos-runtimes.json', 'install-online-macos.sh'])
+names.update(['seven_seed.py', 'ui/home/LICENSE-BOARDUI'])
 hashes={name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in sorted(names)}
 bundle={'id':hashlib.sha256(json.dumps(hashes,sort_keys=True).encode()).hexdigest()[:16],
         'runtime':'vendor/python-3.13.16-embed-amd64.zip',

@@ -13,9 +13,9 @@ const element = id => {
   return elements.get(id);
 };
 const context = vm.createContext({
-  state: { tab: "stock", tagEditorData: { code: "000001", revision: 3 },
-    tagDraft: ["染料", "纺织", "化工"], tagUseSource: false, tagSaving: false },
-  $: element, clearTimeout, window: {scrollX:0,scrollY:0,scrollTo(){}},
+  state: { tab: "stock", requests: {}, tagEditorData: { code: "000001", revision: 3, tags: [] },
+    tagDraft: ["染料", "纺织", "化工"] },
+  $: element, clearTimeout, renderTagEditor() {}, window: {scrollX:0,scrollY:0,scrollTo(){}},
   request: async (url, key, options) => {
     if (url === "/api/tags") return {tags:[{name:"化工",count:5},{name:"染料",count:3},{name:"纺织",count:1}],revision:"new-order"};
     calls.push(JSON.parse(options.body)); return { tags: ["染料", "纺织", "化工"] };
@@ -60,14 +60,15 @@ context.state.meta = { capabilities: { edit_tags: true } };
 context.renderStockProfile({code:"000001", name:"测试股", tags:["银行"]});
 assert.equal(element("edit-stock-profile-tags").hidden, false, "local editing is retained");
 (async () => {
-  await context.saveTagEditor({preventDefault(){}});
+  await context.saveTagEditor();
   assert.equal(calls.at(-2), "stock", "saving from stock history must stay on that stock and finish before closing");
   assert.ok(!calls.includes("date"));
   assert.deepEqual(calls[0].tags, ["染料", "纺织", "化工"]);
   assert.deepEqual(Array.from(context.state.meta.tag_order),["化工","染料","纺织"],"single-stock edits immediately refresh the shared tag order");
   context.state.tab = "date";
-  await context.saveTagEditor({preventDefault(){}});
+  context.state.tagEditorData = {code:"000001",revision:4,tags:["化工"]};
+  await context.saveTagEditor();
   assert.equal(calls.at(-2), "date", "the daily editor retains its original return behavior");
-  assert.equal(context.state.tagSaving, false);
+  assert.equal(context.state.tagEditorData, null);
   console.log("Stock province, complete editable tags, loading state, and save destination: passed.");
 })().catch(error => { console.error(error); process.exitCode = 1; });

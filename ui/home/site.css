@@ -1,0 +1,306 @@
+@scope (body.boardui-preview) {
+  .panel { border-color: var(--line); border-radius: 20px; background: var(--surface); }
+  .button { border-radius: 10px; min-height: 36px; padding: 8px 12px; @apply text-caption-1-medium; }
+  .button.small { min-height: 32px; height: 32px; padding: 6px 10px; }
+  .button.primary { color: var(--color-text-white); background: var(--gradient-button-primary-default); border-color: transparent; box-shadow: var(--shadow-card); }
+  .button.primary:hover:not(:disabled) { background: var(--gradient-button-primary-hover); }
+  .button.primary:active:not(:disabled) { background: var(--gradient-button-primary-active); }
+  .button.secondary { color: var(--color-text-primary); background: var(--surface); border-color: var(--line); }
+  .button.secondary:hover:not(:disabled) { background: var(--color-background-primary-hover); border-color: var(--color-border-button-hover); }
+  .icon-button { border-radius: 10px; background: var(--surface); border-color: var(--line); color: var(--color-text-secondary); }
+  .icon-button:hover:not(:disabled) { color: var(--color-accent-700); background: var(--color-accent-50); border-color: var(--color-accent-200); }
+  .text-button { color: var(--color-text-secondary); }
+  .text-button:hover { color: var(--color-accent-700); }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--color-border-focus-ring); outline-offset: 2px; }
+  input:not([type=checkbox]):not([type=radio]):not([type=hidden]), select, textarea { border-radius: 10px; border-color: var(--line); color: var(--color-text-primary); }
+  input::placeholder, textarea::placeholder { color: var(--color-text-placeholder); }
+  input[type=checkbox], input[type=radio] { accent-color: var(--color-accent-600); }
+  input:disabled, textarea:disabled, select:disabled { color: var(--color-text-disabled); }
+  .section-top { padding-top: 24px; padding-bottom: 16px; }
+  .section-top h2, .panel-heading h3, .cycles-heading h3, .results-heading h2 { @apply text-headline-medium; }
+  .section-subtitle, .muted, .form-label { color: var(--color-text-secondary); }
+  .mini-tag, .result-count { border-color: var(--line); border-radius: 6px; background: var(--color-background-secondary-default); color: var(--color-text-secondary); }
+  .stock-search-wrap, .search-control, .relation-search input, .tag-manager-toolbar input, .tag-manager-detail input { background: var(--color-background-secondary-default); border-color: var(--line); border-radius: 10px; }
+  .stock-search-wrap:focus-within, .search-control:focus-within { outline-color: var(--color-border-focus-ring); }
+  .suggestions { border-radius: 12px; border-color: var(--line); background: var(--surface); box-shadow: var(--shadow-dropdown); }
+  .suggestions button:hover, .suggestions button.focused { background: var(--color-accent-50); }
+  th { background: var(--color-background-secondary-default); color: var(--color-text-secondary); border-color: var(--line); }
+  td { border-color: var(--line); }
+  tbody tr:hover { background: var(--color-background-primary-hover); }
+  .stock-name-button { color: var(--color-text-primary); }
+  .stock-name-button:hover { color: var(--color-accent-700); }
+  .empty-state, .empty-state h4, .empty-state p, .empty-inline { color: var(--color-text-secondary); }
+  .skeleton-line { background: linear-gradient(90deg,var(--color-background-secondary-default) 25%,var(--color-background-tertiary-default) 50%,var(--color-background-secondary-default) 75%); background-size: 200% 100%; }
+  .error-banner, .blacklist-error { border-radius: 12px; border-color: var(--color-border-error-default); background: var(--color-background-tertiary-error); color: var(--color-text-destructive); }
+  .panel-footnote.warning, .verification-label { background: var(--color-status-orange-background); color: var(--color-status-orange-text); border-color: transparent; }
+  .back-to-top { border-radius: 14px; border-color: var(--line); background: var(--surface); color: var(--color-text-secondary); box-shadow: var(--shadow-dropdown); }
+  .back-to-top:hover { color: var(--color-accent-700); background: var(--color-accent-50); border-color: var(--color-accent-200); }
+
+  /* Individual stock history, competitors and cycle cards. */
+  :scope:has(#date-view[hidden]) .query-panel-heading { display: none; }
+  #stock-summary { margin-top: 16px; padding: 20px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
+  #stock-summary .stock-title-row { margin-top: 0; margin-bottom: 12px; gap: 16px; }
+  .stock-identity h3 { @apply text-title-1-semibold; }
+  .stock-profile-initials, .stock-profile-location, .stock-profile-tags-label { color: var(--color-text-secondary); }
+  .stock-profile-blacklist, .stock-blacklist-badge { background: var(--color-background-secondary-default); border-color: var(--line); color: var(--color-text-secondary); }
+  .stock-profile-tags { margin-bottom: 0; }
+  .home-stat-cards.stock-stat-cards { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .stat-card { background: var(--surface); border-color: var(--line); border-radius: 20px; }
+  .stat-card > span, .stat-card small { color: var(--color-text-secondary); }
+  .stat-card.accent { background: var(--color-accent-50); border-color: var(--color-accent-200); }
+  .stat-card.accent:after { background: var(--color-accent-100); }
+  .relation-view-controls, .relation-view-controls label, .relation-scope, .relation-summary { color: var(--color-text-secondary); }
+  .relation-tabs { border-radius: 10px; background: var(--color-background-secondary-default); border-color: var(--line); }
+  .relation-tabs button { border-radius: 7px; color: var(--color-text-secondary); }
+  .relation-tabs button[aria-selected=true] { color: var(--color-accent-700); background: var(--surface); box-shadow: var(--shadow-card); }
+  .competition-list, .competition-rounds { border-color: var(--line); border-radius: 14px; }
+  .competition-list > header, .competition-explanation, .competition-rounds-heading { background: var(--color-background-secondary-default); border-color: var(--line); }
+  .competition-list > header strong, .relation-count { color: var(--color-text-primary); }
+  .competition-round-heading, .competition-round-compact .competition-round-heading { background: var(--color-background-secondary-default); border-color: var(--line); }
+  .competition-round-heading > strong { color: var(--color-accent-700); }
+  .competition-round-body, .relation-evidence, .competition-peer .relation-evidence { background: var(--surface); }
+  .competition-round, .relation-peer, .relation-evidence, .relation-evidence li + li { border-color: var(--line); }
+  .competition-round-description, .competition-round-context, .competition-round-date, .competition-round-body > p, .relation-expand, .relation-round-date, .relation-evidence li p, .relation-peer-id small { color: var(--color-text-secondary); }
+  .round-opponents button { border-radius: 8px; border-color: var(--line); background: var(--color-background-secondary-default); color: var(--color-text-primary); }
+  .round-opponents button:hover { border-color: var(--color-accent-200); background: var(--color-accent-50); color: var(--color-accent-700); }
+  .round-peer-location { color: var(--color-text-secondary); }
+  .round-peer-industry { border-color: var(--color-accent-100); border-radius: 6px; background: var(--color-accent-50); color: var(--color-accent-700); }
+  .relation-stock-link, .relation-date { color: var(--color-accent-700); }
+  .relation-peer > summary:hover, .relation-peer[open] > summary { background: var(--color-background-secondary-default); }
+  .relation-scroll { scrollbar-color: var(--color-border-button-hover) var(--color-background-secondary-default); }
+  .relation-workspace { border-radius: 14px; border-color: var(--line); background: var(--surface); }
+  .relation-peer-sidebar { background: var(--color-background-secondary-default); border-color: var(--line); }
+  .relation-peer-sidebar h4 { @apply text-body-semibold; }
+  .relation-peer-sidebar > header > span, .relation-picker-note { @apply text-caption-1-medium; }
+  .relation-peer-filter input { background: var(--surface); @apply text-body-2-medium; }
+  .relation-peer-sort button { border-radius: 8px; border-color: var(--line); background: var(--surface); color: var(--color-text-secondary); @apply text-caption-1-medium; }
+  .relation-peer-sort button:hover, .relation-peer-sort button[aria-pressed=true] { background: var(--color-accent-50); border-color: var(--color-accent-200); color: var(--color-accent-700); }
+  .relation-peer-list, .relation-peer-choice { border-color: var(--line); }
+  .relation-peer-choice { background: var(--surface); }
+  .relation-peer-choice:hover { background: var(--color-background-secondary-default); }
+  .relation-peer-choice:focus-visible { outline-offset: -2px; }
+  .relation-peer-choice.latest-limit-up { background: color-mix(in srgb, var(--color-status-rose-background) 25%, var(--surface)); }
+  .relation-peer-choice.latest-limit-up:hover { background: color-mix(in srgb, var(--color-status-rose-background) 40%, var(--surface)); }
+  .relation-peer-choice.selected {
+    background: var(--color-background-tertiary-default);
+    box-shadow: inset 3px 0 var(--color-text-secondary);
+  }
+  .relation-peer-choice.latest-limit-up.selected {
+    background: color-mix(in srgb, var(--color-status-rose-background) 60%, var(--surface));
+    box-shadow: inset 3px 0 var(--color-notification-error-foreground);
+  }
+  .peer-choice-heading { align-items: center; }
+  .peer-choice-heading > strong { @apply text-body-bold; }
+  .relation-peer-choice.latest-limit-up .peer-choice-heading > strong { color: var(--color-text-primary); }
+  .peer-choice-heading > small { @apply text-caption-1-medium; }
+  .peer-choice-heading > .latest-limit-badge, .peer-detail-heading .latest-limit-badge {
+    align-self: center;
+    border-color: transparent;
+    border-radius: 6px;
+    background: var(--color-status-rose-background);
+    color: var(--color-status-rose-text);
+    @apply text-caption-2-semibold;
+  }
+  .peer-choice-metrics { font-variant-numeric: tabular-nums; @apply text-caption-1-semibold; }
+  .peer-choice-metrics .has-wins { color: var(--color-status-rose-text); }
+  .peer-choice-metrics .has-losses { color: var(--color-status-blue-text); }
+  .peer-choice-heading > small, .peer-choice-metrics, .peer-detail-heading h4 > small, .peer-comparison-totals span, .peer-comparison-totals strong > small, .peer-records-heading > span, .peer-outcome-date, .comparison-period, .comparison-run-name > span { color: var(--color-text-secondary); }
+  .peer-detail-heading h4 { @apply text-headline-medium; }
+  .peer-comparison-totals > div, .peer-board-comparison > span { border-color: var(--line); border-radius: 10px; background: var(--color-background-secondary-default); }
+  .peer-records-heading, .peer-record-kind { border-color: var(--line); background: var(--color-background-secondary-default); }
+  .peer-record-kind { color: var(--color-text-secondary); border-radius: 6px; }
+  .peer-comparison-record { border-color: var(--line); }
+  .comparison-run { --run-fill: var(--color-status-rose-background); --run-border: var(--color-border-error-default); --run-ink: var(--color-status-rose-text); }
+  .comparison-run-peer { --run-fill: var(--color-accent-50); --run-border: var(--color-accent-200); --run-ink: var(--color-accent-700); }
+  .comparison-run-leader { --run-fill: var(--color-status-purple-background); --run-border: var(--color-status-purple-background); --run-ink: var(--color-status-purple-text); }
+  .comparison-run-name > .comparison-leader-label { color: var(--color-status-purple-text); }
+  .comparison-node { border-radius: 8px; }
+  .cycle-card { border-radius: 16px; padding: 20px; background: var(--surface); border-color: var(--line); }
+  .cycle-date, .cycle-status, .cycle-height-label, .cycle-scope-note { color: var(--color-text-secondary); }
+  .cycle-card button { color: var(--color-accent-700); }
+  .stock-chart svg text { fill: var(--color-text-secondary); }
+  .stock-chart svg .grid-line { stroke: var(--color-separator-border); }
+
+  /* Intraday list and chart geometry stay intact; only the chrome changes. */
+  .minute-toolbar { margin-top: 20px; padding: 20px 24px; }
+  .minute-toolbar .button { height: 40px; min-height: 40px; }
+  .minute-scope, .minute-coverage, .minute-date-field > label, .minute-data-note { color: var(--color-text-secondary); }
+  .minute-stock-panel, .minute-chart-panel { border-radius: 20px; }
+  .minute-list-heading { padding: 20px 16px; border-color: var(--line); }
+  .minute-list-heading h2 { @apply text-headline-medium; }
+  .minute-clear { color: var(--color-accent-700); }
+  .minute-compare-filter { padding: 12px 16px; }
+  .minute-compare-filter input { height: 36px; padding: 8px 10px; background: var(--color-background-secondary-default); border-radius: 10px; }
+  .minute-compare-filter p { color: var(--color-text-secondary); }
+  .minute-stock-row { border-radius: 10px; border-color: transparent; }
+  .minute-stock-row:hover { background: var(--color-background-secondary-default); }
+  .minute-stock-row.selected, .minute-stock-row:has(input:checked) { background: var(--color-accent-50); border-color: var(--color-accent-200); }
+  .minute-stock-row-name { color: var(--color-text-primary); }
+  .minute-stock-row-name small { color: var(--color-text-secondary); }
+  .minute-stock-row input { accent-color: var(--color-accent-600); }
+  .minute-chart-heading { padding: 24px 24px 0; }
+  .minute-chart-identity h2 { @apply text-title-1-semibold; }
+  .minute-profile-meta, .minute-chart-heading p, .minute-hover, .minute-chart-legend { color: var(--color-text-secondary); }
+  .minute-quote strong { @apply text-display-4-medium; }
+  .minute-timeline { margin-top: 24px; border-radius: 20px; }
+  .minute-timeline-heading { padding: 24px 24px 16px; }
+  .minute-timeline-heading h2 { @apply text-headline-medium; }
+  .minute-timeline-heading p { color: var(--color-text-secondary); }
+  .minute-timeline-heading .minute-timeline-scope { color: var(--color-accent-700); background: var(--color-accent-50); border-radius: 6px; }
+  .minute-timeline-filters { background: var(--color-background-secondary-default); border-color: var(--line); }
+  .minute-timeline-filters select, .minute-stock-picker-toggle { border-color: var(--line); border-radius: 8px; background: var(--surface); color: var(--color-text-primary); }
+  .minute-stock-picker-popup { border-color: var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-dropdown); }
+  .minute-stock-option:hover, .minute-stock-option:has(input:checked) { background: var(--color-accent-50); }
+  .minute-day-chart { border-radius: 12px; border-color: var(--line); }
+  .minute-day-header-wrap, .minute-day-axis-title, .minute-day-pan-row { background: var(--color-background-secondary-default); border-color: var(--line); }
+  .minute-day-axis-track { color: var(--color-text-primary); }
+  .minute-day-lane { --day-row-bg: var(--surface); }
+  .minute-day-lane:nth-of-type(even) { --day-row-bg: var(--color-background-secondary-default); }
+  .minute-day-lane.is-selected { --day-row-bg: var(--color-accent-50); }
+  .minute-day-stock { border-color: var(--line); }
+  .minute-day-node { border-radius: 6px; background: var(--surface); }
+  .minute-day-node:hover { background: var(--color-background-primary-hover); }
+  .minute-day-node[aria-pressed=true] { background: var(--color-accent-50); }
+  .day-rapid_up { color: var(--color-status-purple-text); }
+  .day-rapid_down { color: var(--color-calendar-event-emerald-time); }
+  .minute-day-axis-cursor { color: var(--color-accent-700); background: var(--color-accent-100); }
+  .minute-day-selection, .minute-day-zoom { background: var(--color-background-secondary-default); border-color: var(--line); border-radius: 10px; }
+  .minute-day-zoom button[aria-pressed=true] { color: var(--color-accent-700); background: var(--surface); box-shadow: var(--shadow-card); }
+  .minute-timeline-progress, .minute-timeline-data-gap { color: var(--color-text-secondary); background: var(--color-background-secondary-default); border-color: var(--line); border-radius: 12px; }
+
+  /* Catalogs and stock management. */
+  .tag-manager-toolbar { margin-top: 20px; padding: 24px; }
+  .tag-manager-toolbar h2 { @apply text-headline-medium; }
+  .tag-manager-toolbar-actions > .button, .tag-manager-input-row > .button { height: 36px; min-height: 36px; }
+  .tag-manager-catalog, .tag-manager-detail { padding: 20px; }
+  .tag-manager-grid { gap: 12px; }
+  .tag-manager-item { padding: 12px; border-radius: 10px; background: var(--surface); border-color: var(--line); }
+  .tag-manager-item:hover, .tag-manager-item.selected { background: var(--color-accent-50); border-color: var(--color-accent-200); }
+  .tag-manager-item.selected { box-shadow: inset 3px 0 var(--color-accent-500); }
+  .tag-manager-item strong { color: var(--color-accent-700); }
+  .tag-manager-item small { color: var(--color-text-secondary); }
+  .tag-manager-detail > header, .tag-manager-members li { border-color: var(--line); }
+  .tag-manager-detail h3 { @apply text-headline-medium; }
+  .tag-manager-detail label, .tag-manager-hint, .tag-manager-members small { color: var(--color-text-secondary); }
+  .tag-manager-members { scrollbar-color: var(--color-border-button-hover) var(--color-background-secondary-default); }
+  .tag-manager-remove, .blacklist-remove { color: var(--color-text-destructive); border-radius: 8px; border-color: var(--color-border-button-default); background: var(--surface); }
+  .tag-manager-remove:hover, .blacklist-remove:hover { color: var(--color-text-destructive); background: var(--color-background-tertiary-error); }
+  .blacklist-add-panel { margin-top: 20px; padding: 24px; }
+  #blacklist-add-form .stock-search-wrap, #blacklist-add-button { height: 40px; min-height: 40px; }
+  .blacklist-add-heading p, .blacklist-province, .blacklist-created { color: var(--color-text-secondary); }
+  .blacklist-list-panel .results-heading h2 { @apply text-headline-medium; }
+
+  /* Native dialogs, menus and stock tooltips retain their event handling. */
+  .method-dialog, .tag-dialog { border-radius: 20px; border-color: var(--line); background: var(--surface); color: var(--ink); box-shadow: var(--shadow-dropdown); }
+  .method-dialog::backdrop, .tag-dialog::backdrop { background: color-mix(in srgb,var(--color-text-primary) 28%,transparent); backdrop-filter: blur(3px); }
+  .method-dialog h2, .tag-dialog-heading h2, .dialog-heading h2 { @apply text-title-2-semibold; }
+  .eyebrow { color: var(--color-accent-700); }
+  .method-dialog > p, .method-details dt, .method-details dd, .method-reference-note, .tag-dialog-hint, .tag-dialog-heading p, .tag-empty-hint { color: var(--color-text-secondary); }
+  .method-notice { border-radius: 12px; background: var(--color-background-secondary-default); color: var(--color-text-secondary); border-color: var(--line); }
+  .tag-edit-chip { border-radius: 8px; border-color: var(--line); background: var(--surface); }
+  .tag-edit-chip button { color: var(--color-text-secondary); border-color: var(--line); }
+  .tag-add-row input, .tag-add-row .button { height: 36px; min-height: 36px; }
+  .tag-dialog-actions { border-color: var(--line); }
+  .tag-batch-feedback { color: var(--color-accent-700); }
+  .stock-note-tooltip, .shareholder-tooltip { border-radius: 16px; border-color: var(--line); background: var(--surface); box-shadow: var(--shadow-dropdown); color: var(--ink); }
+  .shareholder-heading, .shareholder-controls, .shareholder-tabs { background: var(--surface); border-color: var(--line); }
+  .shareholder-heading strong { @apply text-headline-medium; }
+  .shareholder-filter, .shareholder-controls, .shareholder-own-summary { border-color: var(--line); background: var(--color-background-secondary-default); color: var(--color-text-secondary); }
+  .shareholder-filter-options label, .shareholder-control-sources a, .shareholder-info-button, .subsidiary-source a { color: var(--color-accent-700); }
+  .shareholder-filter-options input { accent-color: var(--color-accent-600); }
+  .shareholder-tabs button { color: var(--color-text-secondary); }
+  .shareholder-tabs button[aria-selected=true] { color: var(--color-accent-700); border-color: var(--color-accent-600); }
+  .shareholder-peer, .shareholder-own-list, .shareholder-own-list li, .shareholder-own-columns, .subsidiary-stock, .shareholder-subsidiaries li { border-color: var(--line); }
+  .shareholder-peer.together { border-color: var(--color-status-rose-background); background: color-mix(in srgb,var(--color-status-rose-background) 50%,var(--surface)); box-shadow: inset 3px 0 var(--color-notification-error-foreground); }
+  .shareholder-peer.together .shareholder-peer-compare td { background: var(--color-background-secondary-default); }
+  .shareholder-peer.together .stock-name-button, .shareholder-peer.together .shareholder-count { color: var(--color-status-rose-text); }
+  .shareholder-peer.together .stock-name-button:hover { color: var(--color-notification-error-foreground); }
+  .shareholder-peer.together .row-stock-code, .shareholder-peer.together li small { color: color-mix(in srgb,var(--color-text-secondary) 80%,var(--color-text-primary)); }
+  .shareholder-together { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 6px; color: var(--color-text-white); background: var(--color-notification-error-foreground); @apply text-caption-2-semibold; }
+  .shareholder-own-summary { border-radius: 12px; }
+  .shareholder-own-summary span, .shareholder-own-summary > strong { color: var(--color-accent-700); }
+  .shareholder-message, .shareholder-meta, .shareholder-heading > span, .shareholder-own-heading > span, .stock-note-tooltip-entry time, .stock-note-help { color: var(--color-text-secondary); }
+  .shareholder-more { background: var(--color-background-secondary-default); color: var(--color-accent-700); border-color: var(--line); }
+  .stock-note-node { border-color: var(--line); border-radius: 12px; background: var(--surface); }
+  .stock-note-compose { background: var(--color-background-secondary-default); }
+  .stock-note-input { background: var(--surface); border-radius: 10px; box-shadow: inset 0 0 0 1px var(--line); }
+  .stock-note-input:focus-within { outline-color: var(--color-border-focus-ring); }
+  .stock-note-input textarea:focus-visible { outline: 0; }
+  .stock-note-node-body > .button, .stock-note-node-actions > .button { height: 38px; min-height: 38px; }
+  .stock-note-date-tag { color: var(--color-accent-700); background: var(--color-accent-50); border-color: var(--color-accent-100); }
+
+  /* The stock editor has one scroll area between the header and actions. */
+  .tag-dialog.stock-editor-dialog { --stock-editor-control-height: 38px; padding: 0; }
+  .stock-editor-dialog .tag-dialog-heading { align-items: flex-start; padding: 20px 24px 16px; border-block-end: 1px solid var(--line); }
+  .stock-editor-dialog .tag-dialog-heading h2 { margin-block-start: 4px; }
+  .stock-editor-dialog .tag-dialog-heading p { @apply text-caption-1-medium; }
+  .stock-editor-dialog #close-tags { flex: none; width: 36px; height: 36px; }
+  .stock-editor-scroll { position: relative; display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; background: var(--color-background-secondary-default); }
+  .stock-editor-dialog .stock-editor-body { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 12px; margin: 0; padding: 16px 24px; }
+  .stock-editor-dialog .stock-editor-section { min-width: 0; margin: 0; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+  .stock-editor-section-heading { gap: 8px; margin-block-end: 12px; }
+  .stock-editor-section-heading h3 { display: flex; align-items: center; gap: 8px; @apply text-headline-semibold; }
+  .stock-editor-section-icon { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: 8px; background: var(--color-background-secondary-default); color: var(--color-text-secondary); }
+  .stock-editor-section-icon svg { width: 18px; height: 18px; }
+  .stock-editor-dialog .tag-editor-list { min-height: 0; gap: 8px; margin: 0 0 12px; }
+  .stock-editor-dialog .tag-edit-chip .tag-name-input { height: 34px; @apply text-body-2-medium; }
+  .stock-editor-dialog .tag-edit-chip button { width: 32px; height: 24px; padding: 0; }
+  .stock-editor-dialog .tag-edit-chip :focus-visible { outline-offset: -2px; }
+  .stock-editor-dialog .tag-add-row { gap: 8px; margin: 0; }
+  .stock-editor-dialog #tag-new, .stock-editor-dialog .stock-note-input { min-height: var(--stock-editor-control-height); background: var(--surface); }
+  .stock-editor-dialog #tag-new { height: var(--stock-editor-control-height); @apply text-body-2-medium; }
+  .stock-editor-dialog .tag-new-suggestions { z-index: 20; border-color: var(--line); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-dropdown); }
+  .stock-editor-dialog .tag-new-suggestions button { border-radius: 6px; @apply text-body-2-medium; }
+  .stock-editor-dialog .tag-new-suggestions button:hover, .stock-editor-dialog .tag-new-suggestions button[aria-selected=true] { background: var(--color-accent-50); color: var(--color-accent-700); }
+  .stock-editor-dialog .stock-note-node { padding: 0; border: 0; background: transparent; }
+  .stock-editor-dialog .stock-note-node-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .stock-editor-dialog .stock-note-input textarea { padding: 8px 0; @apply text-body-2-medium; }
+  .stock-editor-dialog .stock-note-help { gap: 8px; }
+  .stock-editor-dialog #stock-note-count { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .stock-editor-dialog .stock-note-history:not(:empty) { display: grid; gap: 8px; max-height: none; overflow: visible; margin-block-start: 12px; padding-block-start: 12px; border-block-start: 1px solid var(--line); }
+  .stock-editor-dialog .stock-note-delete { color: var(--color-text-destructive); }
+  .stock-editor-dialog .stock-editor-add, .stock-editor-dialog .stock-note-node-actions > .button, .stock-editor-dialog .stock-editor-buttons > .button {
+    height: var(--stock-editor-control-height); min-height: var(--stock-editor-control-height); min-width: 56px; border-radius: 10px; @apply text-body-2-semibold;
+  }
+  .stock-editor-dialog .tag-dialog-actions { margin: 0; padding: 12px 24px; gap: 12px; }
+  .stock-editor-dialog .tag-blacklist-option {
+    min-height: var(--stock-editor-control-height); gap: 8px; padding: 6px 10px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--color-text-primary);
+    @apply text-body-2-medium;
+  }
+  .tag-blacklist-option:hover:has(input:enabled:not(:checked)) { background: var(--color-background-primary-hover); border-color: var(--color-border-button-hover); }
+  .tag-blacklist-option:has(input:checked) { background: var(--color-accent-50); border-color: var(--color-accent-200); }
+  .tag-blacklist-option:has(input:focus-visible) { outline: 2px solid var(--color-border-focus-ring); outline-offset: 2px; }
+  .tag-blacklist-option input:focus-visible { outline: none; }
+  .tag-blacklist-option:has(input:disabled) { cursor: not-allowed; }
+  .tag-blacklist-hint, .tag-blacklist-status { color: var(--color-text-secondary); }
+  .stock-editor-dialog .stock-editor-buttons { gap: 8px; }
+
+  @media (max-width: 520px) {
+    .stock-editor-dialog .tag-dialog-heading, .stock-editor-dialog .stock-editor-body, .stock-editor-dialog .tag-dialog-actions { padding-inline: 12px; }
+    .stock-editor-dialog .stock-editor-section { padding: 12px; }
+    .stock-editor-dialog .stock-note-input:has(.stock-note-date-tag:not([hidden])) { flex-wrap: wrap; gap: 0; }
+    .stock-editor-dialog .stock-note-input:has(.stock-note-date-tag:not([hidden])) textarea { flex-basis: 100%; }
+  }
+
+  @media(max-width:1000px) {
+    .minute-workspace { grid-template-columns: minmax(0,1fr); }
+    .minute-stock-list { height: 300px; flex: none; overflow-x: hidden; overflow-y: auto; }
+  }
+
+  @media(max-width:760px) {
+    .stock-sticky:has(#stock-summary:not([hidden])) { position: static; }
+    .panel, #stock-summary, .method-dialog, .tag-dialog { border-radius: 16px; }
+    .minute-toolbar, .tag-manager-toolbar, .tag-manager-catalog, .tag-manager-detail, .blacklist-add-panel { padding: 16px; }
+    #stock-summary { padding: 16px; }
+    .stock-identity h3, .minute-chart-identity h2 { @apply text-title-2-semibold; }
+    .home-stat-cards.stock-stat-cards { gap: 8px; }
+    .home-stat-cards.stock-stat-cards > section { padding: 12px; height: 144px; }
+    .home-stat-cards.stock-stat-cards > section > span { display: none; }
+    .home-stat-cards.stock-stat-cards > section > div > p:first-child { padding-right: 0; @apply text-caption-2-medium; }
+    .home-stat-cards.stock-stat-cards > section > div > p:last-child { @apply text-caption-2-regular; }
+    .minute-list-heading, .minute-chart-heading, .minute-timeline-heading { padding-left: 16px; padding-right: 16px; }
+    .tag-manager-toolbar-actions { flex-wrap: wrap; }
+    .method-dialog, .tag-dialog { padding: 20px; }
+  }
+}

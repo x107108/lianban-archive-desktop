@@ -102,6 +102,11 @@ function updateURL({replace = false} = {}) {
     params.set("code", state.selectedStock.code);
   } else if (state.boards) params.set("boards", state.boards);
   if (state.tab === "blacklist") params.set("view", "blacklist");
+  if (state.tab === "seven") {
+    params.set("view", "777");
+    if (!$("seven-exclude-st").checked) params.set("seven_st", "1");
+    if (!$("seven-exclude-gem").checked) params.set("seven_gem", "1");
+  }
   if (state.tab === "tags") { params.set("view", "tags"); if (state.tagManagerName) params.set("tag", state.tagManagerName); }
   if (["region", "pinyin", "code"].includes(state.grouping)) params.set("layout", state.grouping);
   if (state.excludeST) params.set("exclude_st", "1");
@@ -117,7 +122,7 @@ function updateURL({replace = false} = {}) {
 
 function setView(view, update = true) {
   if (state.tab !== view) {
-    ["date", "stock", "blacklist", "intraday", "tags"].filter(channel => channel !== view).forEach(channel => state.requests[channel]?.abort());
+    ["date", "stock", "blacklist", "intraday", "tags", "seven"].filter(channel => channel !== view).forEach(channel => state.requests[channel]?.abort());
     if (view !== "tags") { state.requests["tag-members"]?.abort(); state.requests["tag-manager-search"]?.abort(); }
     if (view !== "intraday") {
       state.requests["intraday-stock"]?.abort();
@@ -132,23 +137,26 @@ function setView(view, update = true) {
   const blacklist = view === "blacklist";
   const tags = view === "tags";
   const minutes = view === "intraday";
-  $("stock-sticky").hidden = blacklist || minutes || tags;
+  const seven = view === "seven";
+  const separate = blacklist || minutes || tags || seven;
+  $("stock-sticky").hidden = separate;
   $("date-view").hidden = view !== "date";
   $("stock-view").hidden = view !== "stock";
   $("blacklist-view").hidden = !blacklist;
   $("tag-management-view").hidden = !tags;
   $("intraday-view").hidden = !minutes;
-  $("search-workspace").hidden = blacklist || minutes || tags;
-  $("archive-range").hidden = blacklist || minutes || tags;
-  $("page-title").textContent = tags ? "标签管理" : minutes ? "主板分时" : blacklist ? "黑名单" : "连板档案";
-  $("page-description").textContent = tags ? "查看全部标签，管理所属股票，统一改名与合并。" : minutes ? "查看沪深主板分时、成交量与竞价，对比不同股票的走势。" : blacklist ? "管理你的黑名单股票，名单中的每一只都持续有效。" : "从交易日看市场高度，从个股看连板轨迹。";
-  $("breadcrumb-page").textContent = tags ? "标签管理" : minutes ? "主板分时" : blacklist ? "黑名单" : "历史连板";
-  ["nav-search", "nav-blacklist", "nav-intraday", "nav-tags"].forEach(id => {
-    const active = id === "nav-tags" ? tags : id === "nav-intraday" ? minutes : id === "nav-blacklist" ? blacklist : !minutes && !blacklist && !tags;
+  $("seven-view").hidden = !seven;
+  $("search-workspace").hidden = separate;
+  $("archive-range").hidden = separate;
+  $("page-title").textContent = seven ? "777" : tags ? "标签管理" : minutes ? "主板分时" : blacklist ? "黑名单" : "连板档案";
+  $("page-description").textContent = seven ? "按七板当天倒序查看历史连板，收录封住七板和七板当天破板。" : tags ? "查看全部标签，管理所属股票，统一改名与合并。" : minutes ? "查看沪深主板分时、成交量与竞价，对比不同股票的走势。" : blacklist ? "管理你的黑名单股票，名单中的每一只都持续有效。" : "从交易日看市场高度，从个股看连板轨迹。";
+  $("breadcrumb-page").textContent = seven ? "777" : tags ? "标签管理" : minutes ? "主板分时" : blacklist ? "黑名单" : "历史连板";
+  ["nav-search", "nav-blacklist", "nav-intraday", "nav-tags", "nav-seven"].forEach(id => {
+    const active = id === "nav-seven" ? seven : id === "nav-tags" ? tags : id === "nav-intraday" ? minutes : id === "nav-blacklist" ? blacklist : !separate;
     $(id).classList.toggle("active", active);
     if (active) $(id).setAttribute("aria-current", "page"); else $(id).removeAttribute("aria-current");
   });
-  if (blacklist || minutes || tags) {
+  if (separate) {
     state.requests.search?.abort();
     state.requests["stock-resolve"]?.abort();
     hideSuggestions();
@@ -159,6 +167,119 @@ function setView(view, update = true) {
   $("stock-query-button").disabled = false;
   clearError();
   if (update) updateURL();
+}
+
+function sevenChartHTML(day, limit) {
+  const changes = day.points.map(([, price]) => price / day.previous_close - 1);
+  const upper = Math.max(limit, ...changes);
+  const lower = Math.min(-upper, ...changes);
+  const y = change => (7 + (upper - change) / (upper - lower) * 64).toFixed(2);
+  let lastSlot = null;
+  const path = day.points.map(([slot], i) => {
+    const command = lastSlot === null || slot - lastSlot > (day.interval || 1) ? "M" : "L";
+    lastSlot = slot;
+    return `${command}${(4 + slot / 240 * 152).toFixed(2)},${y(changes[i])}`;
+  }).join(" ");
+  return `<svg class="seven-chart" viewBox="0 0 160 78" role="img" aria-label="${escapeHTML(day.date)} 分时涨幅，范围 ${numberValue(lower * 100, 2)}% 至 ${numberValue(upper * 100, 2)}%">
+    <title>${escapeHTML(day.minute_source)}${day.status === "partial" ? " · 部分分钟缺失" : ""}</title>
+    <path class="seven-grid" d="M4,7H156 M4,71H156 M80,7V71"/>
+    <path class="seven-reference" d="M4,${y(0)}H156"/>
+    <path class="seven-price" d="${path}"/>
+  </svg>`;
+}
+
+function renderSevenRun(run) {
+  let limit = 0.1;
+  const terminalLabels = {broken: "收盘破板", reset: "连板中断", unsealed: "收盘未封板"};
+  const lastDay = run.days.at(-1);
+  const ending = run.outcome === "broken" ? "broken" : lastDay.terminal;
+  const height = run.days.length === 7 ? "七板" : `${run.days.length}板`;
+  const outcome = ending ? {broken: "破板", reset: "未晋级", unsealed: "未封板"}[ending]
+    : run.days.length === 7 && run.outcome === "resealed" ? "回封" : "封住";
+  const boards = run.days.map((day, i) => {
+    const terminal = terminalLabels[day?.terminal] || (i === 6 && run.outcome === "broken" ? "收盘破板" : "");
+    const label = i === 0 ? "首板" : `${i + 1}板${day?.terminal ? "晋级日" : ""}`;
+    const change = day?.pct_change;
+    if (day?.boards > 0 && change > 0) {
+      limit = day.close > day.previous_close ? day.close / day.previous_close - 1 : change / 100;
+    }
+    const quote = change == null ? "" : `<span class="${change >= 0 ? "seven-up" : "seven-down"}">${change > 0 ? "+" : ""}${numberValue(change, 2)}%</span>`;
+    const chart = day?.points?.length ? sevenChartHTML(day, limit) : `<div class="seven-missing">${day ? "分时暂缺" : "板次记录缺失"}</div>`;
+    return `<div class="seven-day${i === 6 || terminal ? " seven-final" : ""}"><div class="seven-day-head"><strong>${label}</strong>${quote}</div>
+      <time>${escapeHTML(day?.date || "—")}</time>${chart}
+      <div class="seven-axis">${day?.points?.length ? `<span>09:30</span><span>${day.interval === 5 ? "5 分钟" : day.status === "partial" ? "部分缺失" : ""}</span><span>15:00</span>` : ""}</div>
+      ${terminal ? `<small class="seven-opening">${terminal}</small>` : day?.open_times > 0 ? `<small class="seven-opening">开板 ${numberValue(day.open_times)} 次</small>` : ""}</div>`;
+  }).join("");
+  const tags = stockTags(run);
+  return `<article class="seven-run" aria-label="${escapeHTML(run.name)} ${escapeHTML(run.date)}">
+    <header class="seven-stock">
+      <button type="button" class="stock-name-button" data-seven-code="${escapeHTML(run.code)}">${escapeHTML(run.name)}</button>
+      <span>${escapeHTML(run.code)} · ${escapeHTML(marketValue(run.market))}</span>
+      <strong class="seven-outcome${ending ? " broken" : ""}" title="${escapeHTML(lastDay.date)}${ending ? ` · ${terminalLabels[ending]}` : ""}">${height}${outcome}</strong>
+      <time title="七板日期">${escapeHTML(run.date)}</time>
+      <div class="stock-tags">${tags.map(tag => `<span class="stock-tag">${escapeHTML(tag)}</span>`).join("") || '<span class="stock-tag-empty">暂无标签</span>'}</div>
+      <div class="stock-note-row" data-note-code="${escapeHTML(run.code)}">${renderStockNote(run)}</div>
+    </header>${boards}</article>`;
+}
+
+function updateSevenScrollbar() {
+  const scroll = $("seven-scroll"), bar = $("seven-scrollbar");
+  bar.hidden = scroll.scrollWidth <= scroll.clientWidth;
+  if (!bar.hidden) {
+    bar.firstElementChild.style.width = `${scroll.scrollWidth}px`;
+    bar.scrollLeft = scroll.scrollLeft;
+  }
+}
+
+function renderSevenTypes(data) {
+  $("seven-types-sample").textContent = `每个板数统计 ${numberValue(data.total)} 个周期`;
+  const renderRows = labels => Object.entries(labels).map(([type, label]) => {
+    const cells = data.board_types.map(counts => {
+      const count = counts[type];
+      const ratio = data.total ? `${numberValue(count / data.total * 100, 1)}%` : "—";
+      return `<td title="${count} / ${data.total} 个周期">${ratio}</td>`;
+    }).join("");
+    return `<tr${type === "opened" ? ' class="seven-opened-row"' : ""}><th scope="row">${label}</th>${cells}</tr>`;
+  }).join("");
+  $("seven-types-body").innerHTML = renderRows({one_price: "一字板", t_shape: "T 字板", intraday: "盘中封板", opened: "盘中曾开板"});
+  $("seven-types-extra").innerHTML = renderRows({broken: "收盘破板", unknown: "待核实"});
+  $("seven-types").hidden = false;
+}
+
+async function loadSeven() {
+  setView("seven");
+  const runs = $("seven-runs");
+  $("seven-summary").textContent = "正在读取七板档案…";
+  $("seven-years").hidden = true;
+  $("seven-scrollbar").hidden = true;
+  $("seven-types").hidden = true;
+  runs.setAttribute("aria-busy", "true");
+  runs.innerHTML = loadingHTML();
+  const params = new URLSearchParams({exclude_st: $("seven-exclude-st").checked ? "1" : "0",
+                                      exclude_gem: $("seven-exclude-gem").checked ? "1" : "0"});
+  const pending = request(`/api/seven-boards?${params}`, "seven");
+  const controller = state.requests.seven;
+  try {
+    const data = await pending;
+    if (!data || state.tab !== "seven" || state.requests.seven !== controller) return;
+    const unchecked = data.unchecked_dates ? ` · ${numberValue(data.unchecked_dates)} 个交易日的破板池待核对` : "";
+    $("seven-summary").textContent = `共 ${numberValue(data.total)} 个周期${unchecked}`;
+    $("seven-years-list").innerHTML = Object.entries(data.yearly_sealed).reverse().map(([year, count]) =>
+      `<div><dt>${escapeHTML(year)}年</dt><dd>${numberValue(count)}<small>只</small></dd></div>`).join("");
+    $("seven-years").hidden = !Object.keys(data.yearly_sealed).length;
+    renderSevenTypes(data);
+    runs.style.setProperty("--seven-columns", Math.max(7, ...data.rows.map(run => run.days.length)));
+    runs.innerHTML = data.rows.map(renderSevenRun).join("") || emptyHTML("暂无七板记录", "当前档案没有可核验的七板周期。");
+    updateSevenScrollbar();
+  } catch (error) {
+    if (state.tab === "seven" && state.requests.seven === controller) {
+      $("seven-summary").textContent = "";
+      runs.innerHTML = emptyHTML("读取七板档案失败", error.message);
+      showError(error, loadSeven);
+    }
+  } finally {
+    if (state.tab === "seven" && state.requests.seven === controller) runs.setAttribute("aria-busy", "false");
+  }
 }
 
 function canEditBlacklist() { return state.meta?.capabilities?.edit_blacklist === true; }
@@ -1468,8 +1589,6 @@ function updateTagEditorPaths() {
     path.textContent = parents.length ? `${parents.join(" / ")} /` : "";
     path.hidden = !parents.length;
   });
-  const defaults = defaultEditorTags(state.tagEditorData);
-  $("tag-source-label").textContent = defaults.length ? `默认标签：${defaults.map(tag => [...tagAncestors(tag).reverse(), tag].join(" / ")).join("、")}` : "暂无默认标签，可以自行添加标签。";
 }
 
 function defaultEditorTags(data) {
@@ -1511,7 +1630,7 @@ function positionTagSuggestions() {
 
 function renderTagSuggestions() {
   const input = $("tag-new"), list = $("tag-new-suggestions"), query = (input.value || "").trim();
-  if (!state.tagSuggestionsActive || !$("tag-dialog").open || !state.tagEditorData || !query || state.tagSaving || state.tagBlacklistSaving) { hideTagSuggestions(); return; }
+  if (!state.tagSuggestionsActive || !$("tag-dialog").open || !state.tagEditorData || !query || state.stockEditorFinishing || state.tagBlacklistSaving) { hideTagSuggestions(); return; }
   const draft = new Set((state.tagDraft || []).map(tag => tag.split("/").at(-1).trim().toLocaleLowerCase()));
   const parts = query.split("/").map(part => part.trim()), parents = parts.slice(0, -1), child = parts.at(-1);
   state.tagSuggestionRows = (state.tagSuggestionCatalog?.tags || []).filter(tag => {
@@ -1545,7 +1664,7 @@ async function loadTagSuggestionCatalog() {
     if (!Array.isArray(data.tags) || data.tags.some(tag => typeof tag.name !== "string")) throw new Error("标签列表格式无效");
     state.tagSuggestionCatalog = data;
     applyTagOrder(data);
-    updateTagEditorPaths();
+    if (state.tagEditorData) updateTagEditorPaths();
   } catch {
     if (generation === state.tagSuggestionGeneration) state.tagSuggestionError = true;
   } finally {
@@ -1554,7 +1673,7 @@ async function loadTagSuggestionCatalog() {
 }
 
 function chooseExistingTag(index) {
-  if (!state.tagEditorData || state.tagSaving || state.tagBlacklistSaving) return;
+  if (!state.tagEditorData || state.stockEditorFinishing || state.tagBlacklistSaving) return;
   const tag = state.tagSuggestionRows?.[index];
   if (!tag) return;
   $("tag-new").value = tag.name;
@@ -1563,6 +1682,7 @@ function chooseExistingTag(index) {
 
 function onTagSuggestionInput() {
   $("tag-new").setCustomValidity("");
+  updateAddTagButton();
   state.tagSuggestionsActive = true;
   renderTagSuggestions();
 }
@@ -1587,17 +1707,25 @@ function onTagSuggestionKeydown(event) {
   }
 }
 
+function updateAddTagButton() {
+  const input = $("tag-new");
+  $("add-tag").disabled = input.disabled || !input.value.trim();
+}
+
 function updateTagEditorControls() {
-  const busy = Boolean(state.tagSaving || state.tagBlacklistSaving);
-  $("save-tags").textContent = state.tagSaving ? "正在保存…" : "保存标签";
+  const busy = Boolean(state.stockEditorFinishing || state.tagBlacklistSaving);
+  $("save-tags").textContent = state.stockEditorFinishing ? "正在保存…" : "保存";
+  $("save-tags").hidden = !canEditTags() && !canEditNotes();
   $("tag-dialog").setAttribute("aria-busy", String(busy));
-  $("save-tags").disabled = !state.tagEditorData || busy;
+  $("save-tags").disabled = busy || !(canEditTags() && state.tagEditorData || canEditNotes() && state.noteEditorData);
   $("close-tags").disabled = busy;
   $("cancel-tags").disabled = busy;
+  $("tag-editor-form").hidden = !canEditTags();
+  $("tag-editor-form").querySelectorAll("input, button").forEach(control => { control.disabled = busy || !state.tagEditorData; });
   $("tag-blacklist-control").hidden = !canEditBlacklist();
   $("tag-blacklist").disabled = !canEditBlacklist() || !state.tagEditorData || busy;
   $("tag-new").disabled = !state.tagEditorData || busy;
-  $("add-tag").disabled = !state.tagEditorData || busy;
+  updateAddTagButton();
   if (busy || !state.tagEditorData) hideTagSuggestions();
 }
 
@@ -1606,7 +1734,7 @@ function syncTagBlacklistMembership(code, blacklisted, data) {
   for (const row of [...(state.dateData?.rows || []), ...(state.dateData?.suspended_rows || [])]) {
     if (row.code === code) row.blacklisted = blacklisted;
   }
-  for (const stock of [state.stockData?.stock, state.selectedStock]) {
+  for (const stock of [state.stockData?.stock, state.selectedStock, state.minuteDetail?.stock]) {
     if (stock?.code === code) stock.blacklisted = blacklisted;
   }
   if (state.tab === "date" && state.dateData) {
@@ -1616,12 +1744,14 @@ function syncTagBlacklistMembership(code, blacklisted, data) {
     if (board) { board.scrollLeft = scrollLeft; updateIndustryNavigation(); }
   } else if (state.tab === "stock" && state.selectedStock?.code === code) {
     $("stock-blacklist-label").hidden = !blacklisted;
+  } else if (state.tab === "intraday" && state.minuteDetail?.stock?.code === code) {
+    $("minute-stock-blacklist").hidden = !blacklisted;
   }
 }
 
 async function changeTagBlacklist() {
   const editor = state.tagEditorData;
-  if (!editor || !canEditBlacklist() || state.tagSaving || state.tagBlacklistSaving) return;
+  if (!editor || !canEditBlacklist() || state.stockEditorFinishing || state.tagBlacklistSaving) return;
   const previous = editor.blacklisted === true;
   const blacklisted = $("tag-blacklist").checked;
   if (blacklisted === previous) return;
@@ -1646,23 +1776,21 @@ async function changeTagBlacklist() {
   }
 }
 
-async function openTagEditor(code) {
-  if (!canEditTags() || state.tagSaving || state.tagBlacklistSaving) return;
+async function loadEditorTags(code) {
   state.tagEditingCode = code;
   state.tagEditorData = null;
   state.tagDraft = [];
-  state.tagUseSource = false;
-  $("tag-stock-label").textContent = code;
   $("tag-editor-list").innerHTML = '<p class="tag-empty-hint">正在读取标签…</p>';
   $("tag-editor-error").hidden = true;
   $("tag-blacklist").checked = false;
   $("tag-blacklist-status").textContent = "";
   $("tag-blacklist-error").hidden = true;
   $("tag-new").value = "";
+  $("tag-new").setCustomValidity("");
   hideTagSuggestions();
   updateTagEditorControls();
-  if (!$("tag-dialog").open) $("tag-dialog").showModal();
-  loadTagSuggestionCatalog();
+  if (!canEditTags() && !canEditBlacklist()) return;
+  if (canEditTags()) loadTagSuggestionCatalog();
   try {
     const data = await request(`/api/stock-tags?${new URLSearchParams({ code })}`, "tags");
     if (!data || !$("tag-dialog").open || state.tagEditingCode !== code) return;
@@ -1678,7 +1806,7 @@ async function openTagEditor(code) {
 }
 
 function addTagDraft() {
-  if (!state.tagEditorData || state.tagSaving || state.tagBlacklistSaving) return false;
+  if (!state.tagEditorData || state.stockEditorFinishing || state.tagBlacklistSaving) return false;
   const input = $("tag-new"), entered = input.value.trim();
   const parts = entered.split("/").map(part => part.trim());
   const value = parts.map(part => state.tagSuggestionCatalog?.tags.find(tag => tag.name.toLocaleLowerCase() === part.toLocaleLowerCase())?.name || part).join("/");
@@ -1690,45 +1818,35 @@ function addTagDraft() {
   else if (state.tagDraft.some(tag => tag.split("/").at(-1).trim().toLocaleLowerCase() === parts.at(-1).toLocaleLowerCase())) input.setCustomValidity("这个标签已存在。");
   if (!input.reportValidity()) return false;
   state.tagDraft.push(value);
-  state.tagUseSource = false;
   input.value = "";
+  updateAddTagButton();
   renderTagEditor();
   input.focus();
   return true;
 }
 
-function closeTagEditor() {
-  if (state.tagSaving || state.tagBlacklistSaving) return;
-  state.requests.tags?.abort();
-  state.requests["tag-editor-catalog"]?.abort();
-  hideTagSuggestions();
-  $("tag-dialog").close();
-}
-
-async function saveTagEditor(event) {
-  event.preventDefault();
-  if (!state.tagEditorData || state.tagSaving || state.tagBlacklistSaving) return;
-  if ($("tag-new").value.trim() && !addTagDraft()) return;
-  if (!$("tag-editor-form").reportValidity()) return;
+async function saveTagEditor() {
   const position = {left: window.scrollX, top: window.scrollY, behavior: "instant"};
   const scrollLeft = $("date-table-area").querySelector(".industry-board")?.scrollLeft;
-  state.tagSaving = true;
-  $("tag-editor-form").querySelectorAll("button, input").forEach(element => { element.disabled = true; });
-  updateTagEditorControls();
   try {
-    const data = await request("/api/stock-tags", "tags-save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: state.tagEditorData.code, tags: state.tagDraft, revision: state.tagEditorData.revision, use_source: state.tagUseSource, tag_alias_revision: state.tagEditorData.tag_alias_revision }) });
+    const data = await request("/api/stock-tags", "tags-save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: state.tagEditorData.code, tags: state.tagDraft, revision: state.tagEditorData.revision, tag_alias_revision: state.tagEditorData.tag_alias_revision }) });
     if (!data) return;
+    state.tagEditorData = data;
+    state.tagDraft = [...data.tags];
+    renderTagEditor();
+    updateTagEditorControls();
     await refreshTagOrder();
-    if (state.tab === "stock") await loadStock({remember:false, quiet:true}); else await loadDate({quiet:true});
-    $("tag-dialog").close();
+    if (state.tab === "stock") await loadStock({remember:false, quiet:true});
+    else if (state.tab === "intraday") await loadIntraday();
+    else if (state.tab === "seven") await loadSeven();
+    else await loadDate({quiet:true});
+    closeStockEditor();
     const board = $("date-table-area").querySelector(".industry-board");
     if (board && scrollLeft != null) { board.scrollLeft = scrollLeft; updateIndustryNavigation(); }
     window.scrollTo(position);
-  } catch (error) { $("tag-editor-error").textContent = error.message; $("tag-editor-error").hidden = false; }
-  finally {
-    state.tagSaving = false;
-    $("tag-editor-form").querySelectorAll("button, input").forEach(element => { element.disabled = false; });
-    updateTagEditorControls();
+  } catch (error) {
+    $("tag-editor-error").textContent = error.message;
+    $("tag-editor-error").hidden = false;
   }
 }
 
@@ -1744,7 +1862,7 @@ function stockNoteFields(id = null) {
 }
 
 function expandStockNoteDate(id = null) {
-  if (!canEditNotes() || !state.noteEditorData || (state.noteSaving && !state.noteAutoSaving) || state.noteClosing) return;
+  if (!canEditNotes() || !state.noteEditorData || (state.noteSaving && !state.noteAutoSaving) || state.stockEditorFinishing) return;
   const fields = stockNoteFields(id);
   if (!fields) return;
   if (!fields.time.value) fields.time.value = noteLocalDate();
@@ -1754,7 +1872,7 @@ function expandStockNoteDate(id = null) {
 }
 
 function removeStockNoteDate(id = null) {
-  if (!canEditNotes() || !state.noteEditorData || (state.noteSaving && !state.noteAutoSaving) || state.noteClosing) return;
+  if (!canEditNotes() || !state.noteEditorData || (state.noteSaving && !state.noteAutoSaving) || state.stockEditorFinishing) return;
   const fields = stockNoteFields(id);
   if (!fields) return;
   fields.time.value = "";
@@ -1774,7 +1892,7 @@ function captureStockNoteDrafts() {
 }
 
 function resizeStockNoteContents() {
-  if (!$("stock-note-dialog").open) return;
+  if (!$("tag-dialog").open) return;
   const fields = [$("stock-note-content"), ...$("stock-note-history").querySelectorAll("[data-note-content]")];
   fields.forEach(input => {
     input.style.height = "36px";
@@ -1792,7 +1910,7 @@ function renderStockNoteHistory() {
 }
 
 function updateStockNoteControls() {
-  const busy = Boolean(state.noteSaving), lockInputs = Boolean((busy && !state.noteAutoSaving) || state.noteClosing), ready = Boolean(state.noteEditorData), editable = canEditNotes();
+  const busy = Boolean(state.noteSaving), lockInputs = Boolean((busy && !state.noteAutoSaving) || state.stockEditorFinishing), ready = Boolean(state.noteEditorData), editable = canEditNotes();
   captureStockNoteDrafts();
   $("stock-note-form").hidden = !editable;
   $("stock-note-content").disabled = lockInputs || !ready;
@@ -1809,19 +1927,17 @@ function updateStockNoteControls() {
     fields.removeDate.hidden = !editable;
     fields.removeDate.disabled = lockInputs || !ready;
   }
-  $("save-stock-note").disabled = busy || state.noteClosing || !ready || !editable || !$("stock-note-content").value.trim();
+  $("save-stock-note").disabled = busy || state.stockEditorFinishing || !ready || !editable || !$("stock-note-content").value.trim();
   $("save-stock-note").hidden = !editable;
   $("stock-note-history").querySelectorAll("[data-note-id]").forEach(row => {
     row.querySelectorAll("input,textarea").forEach(input => { input.disabled = lockInputs || !ready; input.readOnly = !editable; });
     const remove = row.querySelector("[data-delete-note]");
     remove.hidden = !editable;
-    remove.disabled = busy || state.noteClosing || !ready || !editable;
+    remove.disabled = busy || state.stockEditorFinishing || !ready || !editable;
   });
   $("undo-stock-note").hidden = !editable || !state.noteUndoId;
-  $("undo-stock-note").disabled = busy || state.noteClosing || !ready;
-  ["close-stock-note", "cancel-stock-note"].forEach(id => { $(id).disabled = Boolean(state.noteClosing); });
-  $("retry-stock-note").disabled = busy || state.noteClosing;
-  $("cancel-stock-note").textContent = editable ? (state.noteClosing ? "保存中…" : "保存") : "关闭";
+  $("undo-stock-note").disabled = busy || state.stockEditorFinishing || !ready;
+  $("retry-stock-note").disabled = busy || state.stockEditorFinishing;
   $("stock-note-count").textContent = `${$("stock-note-content").value.length} / 5000`;
   resizeStockNoteContents();
 }
@@ -1831,6 +1947,7 @@ function hideShareholderTooltip() {
   if ($("shareholder-info-dialog").open) $("shareholder-info-dialog").close();
   state.shareholderGeneration = (state.shareholderGeneration || 0) + 1;
   state.requests?.shareholders?.abort();
+  state.requests?.["stock-market-values"]?.abort();
   state.requests?.subsidiaries?.abort();
   state.shareholderAnchor?.removeAttribute("aria-controls");
   state.shareholderAnchor?.setAttribute("aria-expanded", "false");
@@ -1888,10 +2005,31 @@ function updateShareholderTooltip() {
   }
 }
 
+function renderShareholderMarketValues(values) {
+  const items = [["total", "总市值"], ["circulating", "流通市值"], ["free_float", "自由流通市值"]];
+  const date = values?.quote_at?.slice(0, 16).replace("T", " ") || values?.date;
+  const hasValues = items.some(([key]) => values?.[key] != null);
+  const note = !values ? "正在读取市值…" : !hasValues ? "该交易日暂无市值数据" :
+    `行情 ${escapeHTML(date)}${values.free_float_date ? ` · 自由流通股本 ${escapeHTML(values.free_float_date)}` : ""}`;
+  return `<div class="shareholder-market-grid">${items.map(([key, label]) => {
+    const value = values?.[key];
+    return `<div><span>${label}</span><strong>${value == null ? "—" : `${(value / 1e8).toLocaleString("zh-CN", {minimumFractionDigits: 2, maximumFractionDigits: 2})}<small>亿元</small>`}</strong></div>`;
+  }).join("")}</div><p class="shareholder-market-note">${note}</p>`;
+}
+
 function renderShareholderTooltip(data, limit = 50) {
-  const scopes = {total: "十大股东", float: "十大流通"};
+  const scopes = {total: "十大股东", float: "十大流通股东"};
+  const ratioLabels = {total: "占总股本", float: "占总流通股本"};
+  const ratioText = ratio => ratio == null ? "未披露" : `${ratio.toLocaleString("zh-CN", {minimumFractionDigits: 2, maximumFractionDigits: 4})}%`;
   const kinds = {...scopes, controller: "控股股东", actual_controller: "实际控制人", parent_owner: "上层股东"};
   const relationText = relations => [...new Set(relations.map(r => kinds[r.kind]))].join(" / ");
+  const holdingCell = report => {
+    if (!report) return '<td><small>暂无该名单记录</small></td>';
+    const shares = report.holding_shares;
+    const shareLabel = shares == null ? "<strong>股数未披露</strong>" :
+      `<strong title="${shares.toLocaleString("zh-CN")} 股">${Math.round(shares / 10_000).toLocaleString("zh-CN")} 万股</strong>`;
+    return `<td><div class="shareholder-peer-figures">${shareLabel}<strong>${ratioText(report.holding_ratio)}</strong></div><small>${escapeHTML(report.date)}</small></td>`;
+  };
   const controls = data.control_owners || [];
   const tab = state.shareholderTab || "common";
   const controlEmpty = data.control_status === "error" ? "暂未获取成功" : data.control_checked ? "暂无明确披露" : "正在获取";
@@ -1908,7 +2046,26 @@ function renderShareholderTooltip(data, limit = 50) {
   const message = !profiles.length && !controls.length ? (data.status === "error" ? "股东资料暂未获取成功，稍后自动重试" : data.profiles.length === 2 ? "来源暂无可用股东资料" : "股东资料正在获取，请稍后再查看")
     : !data.rows.length ? "在已取得资料的股票中，暂未发现共同股东" : !rows.length ? "当前分类下的共同股东已全部屏蔽，可取消勾选后查看关联股票" : "";
   const common = `<div class="shareholder-filter"><div class="shareholder-filter-heading"><span>屏蔽分类</span><span>${rows.length} 只关联股票</span></div><div class="shareholder-filter-options" role="group" aria-label="屏蔽股东分类">${groupOptions}</div></div>
-    ${rows.slice(0, limit).map(peer => `<div class="shareholder-peer${peer.same_day_limit_up ? " together" : ""}"><div class="shareholder-peer-title"><button type="button" class="stock-name-button" data-shareholder-peer="${escapeHTML(peer.code)}" data-peer-name="${escapeHTML(peer.name)}">${escapeHTML(peer.name)}</button><span class="row-stock-code">${escapeHTML(peer.code)}</span>${peer.same_day_limit_up ? '<span class="shareholder-together">当日同涨停</span>' : ""}<span class="shareholder-count">${peer.shared_count} ${peer.holders.some(h => h.relations?.length || h.own_relations?.some(r => !scopes[r.kind])) ? "项共同关系" : "位共同股东"}</span></div><ul>${peer.holders.map(holder => `<li><span>${escapeHTML(holder.name)}</span><small>${escapeHTML(holder.type)}${holder.relations?.length || holder.own_relations?.some(r => !scopes[r.kind]) ? ` · 本股：${relationText(holder.own_relations || [])}；对方：${relationText([...(holder.relations || []), ...holder.reports.map(r => ({kind: r.scope}))])}` : ""}${holder.reports.length ? ` · ${holder.reports.map(r => `${scopes[r.scope]} ${escapeHTML(r.date)}`).join(" / ")}` : ""}</small></li>`).join("")}</ul></div>`).join("")}
+    ${rows.slice(0, limit).map(peer => `<div class="shareholder-peer${peer.same_day_limit_up ? " together" : ""}">
+      <div class="shareholder-peer-title"><button type="button" class="stock-name-button" data-shareholder-peer="${escapeHTML(peer.code)}" data-peer-name="${escapeHTML(peer.name)}">${escapeHTML(peer.name)}</button><span class="row-stock-code">${escapeHTML(peer.code)}</span>${peer.same_day_limit_up ? '<span class="shareholder-together">当日同涨停</span>' : ""}<span class="shareholder-count">${peer.shared_count} ${peer.holders.some(h => h.relations?.length || h.own_relations?.some(r => !scopes[r.kind])) ? "项共同关系" : "位共同股东"}</span></div>
+      <ul>${peer.holders.map(holder => {
+        const own = holder.own_relations || [];
+        const reports = Object.entries(scopes).map(([scope, label]) => {
+          const ownReport = own.find(report => report.kind === scope);
+          const peerReport = holder.reports.find(report => report.scope === scope);
+          if (!ownReport && !peerReport) return "";
+          return `<tr><th scope="row">${label}</th>${holdingCell(ownReport)}${holdingCell(peerReport)}</tr>`;
+        }).join("");
+        const ownRoles = relationText(own.filter(relation => !scopes[relation.kind]));
+        const peerRoles = relationText(holder.relations || []);
+        const roles = ownRoles || peerRoles ? `<tr><th scope="row">控制关系</th><td>${ownRoles || "—"}</td><td>${peerRoles || "—"}</td></tr>` : "";
+        return `<li><div class="shareholder-peer-holder-title"><strong>${escapeHTML(holder.name)}</strong><small>${escapeHTML(holder.type)}</small></div>
+          <table class="shareholder-peer-compare" aria-label="${escapeHTML(holder.name)}的资料对照"><thead><tr>
+          <th scope="col" aria-label="名单类别"></th>
+          <th scope="col"><strong>${escapeHTML(data.name || data.code)}</strong></th>
+          <th scope="col"><strong>${escapeHTML(peer.name)}</strong></th>
+          </tr></thead><tbody>${reports}${roles}</tbody></table></li>`;
+      }).join("")}</ul></div>`).join("")}
     ${rows.length > limit ? `<button type="button" class="shareholder-more" data-shareholder-more>继续显示 · 已展示 ${limit} / ${rows.length} 只</button>` : ""}
     ${message ? `<p class="shareholder-message">${message}</p>` : ""}`;
   let holders = "";
@@ -1918,8 +2075,24 @@ function renderShareholderTooltip(data, limit = 50) {
     const empty = data.status === "error" ? "资料暂未获取成功，稍后自动重试" : profile ? "来源暂无可用资料" : "资料正在获取，请稍后再查看";
     const disclosed = names.filter(holder => holder.holding_ratio != null);
     const ratio = disclosed.reduce((sum, holder) => sum + holder.holding_ratio, 0);
-    const summary = scope === "float" && names.length ? `<div class="shareholder-own-summary"><div><span>${disclosed.length === names.length ? "合计持股占比" : "已披露比例合计"}</span><small>${disclosed.length === names.length ? `${names.length} 位股东` : `${disclosed.length} / ${names.length} 位股东已披露`} · 占总流通股本</small></div><strong>${disclosed.length ? `${ratio.toLocaleString("zh-CN", {minimumFractionDigits: 2, maximumFractionDigits: 4})}%` : "暂无数据"}</strong></div>` : "";
-    holders = `<section class="shareholder-own-list"><div class="shareholder-own-heading"><h4>${scope === "total" ? "十大股东" : "十大流通股东"}</h4>${profile?.report_date ? `<span>报告期 ${escapeHTML(profile.report_date)}</span>` : ""}</div>${summary}${names.length ? `<div class="shareholder-own-columns"><span>股东</span><span>${scope === "total" ? "占总股本" : "占总流通股本"}</span></div><ul>${names.map(holder => `<li><div class="shareholder-own-identity"><span>${escapeHTML(holder.name)}</span><small>${escapeHTML(holder.type)}</small></div><strong class="shareholder-own-ratio">${holder.holding_ratio == null ? "未披露" : `${holder.holding_ratio.toLocaleString("zh-CN", {minimumFractionDigits: 2, maximumFractionDigits: 4})}%`}</strong></li>`).join("")}</ul>` : `<p class="shareholder-list-empty">${empty}</p>`}</section>`;
+    const shareCounts = names.filter(holder => holder.holding_shares != null);
+    const totalShares = shareCounts.reduce((sum, holder) => sum + holder.holding_shares, 0);
+    const sharesComplete = shareCounts.length === names.length;
+    const shareSummary = `<div class="shareholder-own-summary shareholder-own-shares-summary"><div>
+      <span>${sharesComplete ? "合计持股数" : "已披露持股数合计"}</span>
+      <small>${sharesComplete ? `${names.length} 位股东` : `${shareCounts.length} / ${names.length} 位股东已披露`}</small></div>
+      <strong>${shareCounts.length ? `${totalShares.toLocaleString("zh-CN")} 股` : "暂无数据"}</strong></div>`;
+    const ratiosComplete = disclosed.length === names.length;
+    const ratioSummary = `<div class="shareholder-own-summary"><div>
+      <span>${ratiosComplete ? "合计持股占比" : "已披露比例合计"}</span>
+      <small>${ratiosComplete ? `${names.length} 位股东` : `${disclosed.length} / ${names.length} 位股东已披露`} · ${ratioLabels[scope]}</small></div>
+      <strong>${disclosed.length ? ratioText(ratio) : "暂无数据"}</strong></div>`;
+    holders = `<section class="shareholder-own-list"><div class="shareholder-own-heading"><h4>${scope === "total" ? "十大股东" : "十大流通股东"}</h4>${profile?.report_date ? `<span>报告期 ${escapeHTML(profile.report_date)}</span>` : ""}</div>
+      ${names.length ? `<div class="shareholder-own-totals">${shareSummary}${ratioSummary}</div>
+      <div class="shareholder-own-columns"><span>股东</span><span>持股数（股）</span><span>${ratioLabels[scope]}</span></div>
+      <ul>${names.map(holder => `<li><div class="shareholder-own-identity"><span>${escapeHTML(holder.name)}</span><small>${escapeHTML(holder.type)}</small></div>
+        <strong class="shareholder-own-quantity">${holder.holding_shares == null ? "未披露" : holder.holding_shares.toLocaleString("zh-CN")}</strong>
+        <strong class="shareholder-own-ratio">${ratioText(holder.holding_ratio)}</strong></li>`).join("")}</ul>` : `<p class="shareholder-list-empty">${empty}</p>`}</section>`;
   }
   let subsidiaries = "";
   if (tab === "subsidiaries") {
@@ -1927,6 +2100,7 @@ function renderShareholderTooltip(data, limit = 50) {
     subsidiaries = `<div class="shareholder-subsidiaries"><div class="subsidiary-stock"><span>对应股票</span><strong>${escapeHTML(data.name || data.code)}</strong><small>${escapeHTML(data.code)}</small></div><div class="subsidiary-list-heading"><h4>控股子公司</h4>${profile ? `<span>${profile.rows.length} 家</span>` : ""}</div>${profile?.rows.length ? `<ul>${profile.rows.map(company => `<li><div><strong>${escapeHTML(company.name)}</strong><small>${escapeHTML(company.relation)}${company.holding_ratio ? ` · 持股 ${escapeHTML(company.holding_ratio)}` : ""}</small></div><span class="subsidiary-business">${escapeHTML(company.business || "业务暂未披露")}</span></li>`).join("")}</ul>` : `<p class="shareholder-list-empty">${!profile ? "正在读取子公司资料…" : profile.status === "error" ? "子公司资料暂未获取成功，请稍后重新打开查看。" : profile.status === "empty" ? "子公司资料尚未获取。" : "来源暂未披露控股子公司名单。"}</p>`}${profile?.fetched_at ? `<p class="subsidiary-source">${profile.status === "error" ? "更新失败，展示已有资料 · " : ""}${profile.disclosure_date ? `公告 ${escapeHTML(profile.disclosure_date)} · ` : ""}${escapeHTML(profile.fetched_at.slice(0, 16).replace("T", " "))} 获取 · <a href="${escapeHTML(profile.source_url)}" target="_blank" rel="noopener noreferrer">资料来源</a></p>` : ""}</div>`;
   }
   return `<div class="shareholder-heading"><div class="shareholder-title"><strong id="shareholder-stock-title">${escapeHTML(data.name || data.code || "股东信息")}</strong><button type="button" class="shareholder-info-button" data-shareholder-info aria-label="共同股东说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg></button></div><span class="shareholder-meta">${dayLabel}</span></div>
+    <section class="shareholder-market-values" data-shareholder-market-values aria-label="本股市值">${renderShareholderMarketValues(data.market_values)}</section>
     <section class="shareholder-controls" aria-label="本股控股关系"><div class="shareholder-control-columns">${["controller", "actual_controller"].map(kind => `<div><h4>${kinds[kind]}</h4>${controls.some(owner => owner.kind === kind) ? controls.filter(owner => owner.kind === kind).map(owner => `<p>${escapeHTML(owner.name)}</p>`).join("") : `<p class="shareholder-list-empty">${controlEmpty}</p>`}</div>`).join("")}</div>${controls.filter(owner => owner.kind === "parent_owner").map(owner => `<div class="shareholder-parent-owner"><h4>上层股东</h4><p>${escapeHTML(owner.name)}</p>${owner.via_name ? `<small>经 ${escapeHTML(owner.via_name)}</small>` : ""}</div>`).join("")}</section>
     <div class="shareholder-tabs" role="tablist" aria-label="股东信息">${[["common", "共同股东"], ["float", "十大流通股东"], ["holders", "十大股东"], ["subsidiaries", "子公司"]].map(([key, label]) => `<button type="button" role="tab" id="shareholder-tab-${key}" data-shareholder-tab="${key}" aria-selected="${tab === key}" aria-controls="shareholder-panel" tabindex="${tab === key ? 0 : -1}">${label}</button>`).join("")}</div>
     <div id="shareholder-panel" role="tabpanel" aria-labelledby="shareholder-tab-${tab}">${tab === "subsidiaries" ? subsidiaries : tab === "holders" || tab === "float" ? holders : common}</div>`;
@@ -1973,6 +2147,7 @@ function openShareholderInfo() {
   const sources = [...new Set(owners.map(owner => owner.source_url))];
   $("shareholder-info-content").innerHTML = `<p>${escapeHTML(data.source)} · 已取得 ${data.coverage} / ${data.requested} 只股票${data.status === "updating" ? " · 正在更新" : data.status === "error" ? " · 更新失败，保留已有缓存" : ""}</p>${profiles.length ? `<p>本股资料获取于 ${escapeHTML(profiles.map(p => p.fetched_at).sort()[0].slice(0, 16).replace("T", " "))}</p>` : ""}${data.control_status ? `<p>控股资料 · 已取得 ${data.control_coverage} / ${data.requested} 只股票${data.control_status === "updating" ? " · 正在更新" : data.control_status === "error" ? " · 更新失败，保留已有缓存" : ""}${owners.length ? `<br>本股控股资料获取于 ${escapeHTML(owners.map(owner => owner.fetched_at).sort()[0].slice(0, 16).replace("T", " "))}` : ""}</p><p>控股股东、实际控制人来自东方财富公司资料；上层股东仅补充有公开文件依据的关系，目前包含华通集团由青岛市国资委全资持有的关系。资料获取时间不代表控制权变更时间，筹划中的转让不作为已完成关系。</p>${sources.length ? `<p class="shareholder-control-sources">${sources.map((url, i) => `<a href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer">${url.includes("chinamoney.org.cn") ? "华通集团股权来源（第 35 页）" : `公司资料来源${sources.length > 2 ? ` ${i + 1}` : ""}`}</a>`).join(" · ")}</p>` : ""}` : ""}<p>${escapeHTML(data.scope_note)}</p>`;
   $("shareholder-info-content").innerHTML += '<p>屏蔽选项按五组展示，股东明细保留具体类别。企业及其他包含企业股东、控股机构及尚未确认身份的其他主体；企业股东按披露的组织形式区分，AMC 按已核对的机构名单识别。中央汇金及香港结算组包含中央汇金投资、中央汇金资管及香港中央结算三个明确主体，其他国家队股东保留原组。显示“部分”表示保留此前的分类选择，勾选后整组屏蔽，取消后整组显示。</p>';
+  $("shareholder-info-content").innerHTML += '<p>总市值和流通市值取东方财富的所选交易日行情。自由流通市值需另行核实自由流通股本，当前发布渠道暂无可用数据。持股数按两份名单各自报告期的披露值合计，部分缺失时标注已披露人数。</p>';
   $("shareholder-info-dialog").showModal();
 }
 
@@ -1984,6 +2159,18 @@ function positionShareholderTooltip(button) {
   tooltip.style.left = `${Math.max(12, Math.min(anchor.left, window.innerWidth - bounds.width - 12))}px`;
   const top = below >= bounds.height ? anchor.bottom + 6 : anchor.top - bounds.height - 6;
   tooltip.style.top = `${Math.max(12, Math.min(top, window.innerHeight - bounds.height - 12))}px`;
+}
+
+async function loadShareholderMarketValues(data, day) {
+  let values;
+  try {
+    values = await request(`/api/stock-market-values?${new URLSearchParams({code: data.code, date: data.date})}`, "stock-market-values");
+  } catch {
+    values = null;
+  }
+  if (state.shareholderData !== data || day !== $("trade-date").value) return;
+  data.market_values = values || {};
+  $("shareholder-tooltip").querySelector("[data-shareholder-market-values]").innerHTML = renderShareholderMarketValues(data.market_values);
 }
 
 async function showShareholderTooltip(button, pin = false) {
@@ -2011,6 +2198,7 @@ async function showShareholderTooltip(button, pin = false) {
     state.shareholderLimit = 50;
     updateShareholderTooltip();
     positionShareholderTooltip(button);
+    void loadShareholderMarketValues(data, day);
   } catch {
     if (generation !== state.shareholderGeneration || state.shareholderAnchor !== button || !button.isConnected) return;
     tooltip.innerHTML = '<p class="shareholder-message">股东关联暂时无法读取，请移开后重新查看。</p>';
@@ -2086,8 +2274,20 @@ async function showStockNoteTooltip(button) {
   }
 }
 
-async function openStockNoteEditor(code) {
-  if (state.noteSaving || state.noteClosing || (state.noteEditorData && $("stock-note-dialog").open)) return;
+function openStockEditor(code, focusNotes = false) {
+  const dialog = $("tag-dialog");
+  if (dialog.open) return;
+  $("tag-dialog-title").textContent = canEditTags() || canEditNotes() || canEditBlacklist() ? "编辑股票资料" : "查看股票资料";
+  $("tag-stock-label").textContent = code;
+  const tags = loadEditorTags(code);
+  const notes = loadEditorNotes(code, focusNotes);
+  dialog.showModal();
+  $("stock-editor-body").scrollTop = 0;
+  return Promise.all([tags, notes]);
+}
+
+async function loadEditorNotes(code, focusNotes = false) {
+  if (state.noteSaving || state.stockEditorFinishing) return;
   clearTimeout(state.noteAutosaveTimer);
   hideStockNoteTooltip();
   const generation = (state.noteGeneration || 0) + 1;
@@ -2097,8 +2297,6 @@ async function openStockNoteEditor(code) {
   state.noteDrafts = new Map();
   state.noteUndoId = null;
   state.noteComposing = false;
-  $("stock-note-title").textContent = canEditNotes() ? "编辑股票备注" : "查看股票备注";
-  $("stock-note-label").textContent = code;
   $("stock-note-content").value = "";
   $("stock-note-time").value = "";
   $("stock-note-history").innerHTML = "";
@@ -2106,18 +2304,18 @@ async function openStockNoteEditor(code) {
   $("stock-note-error").hidden = true;
   $("retry-stock-note").hidden = true;
   updateStockNoteControls();
-  if (!$("stock-note-dialog").open) $("stock-note-dialog").showModal();
   try {
     const data = await request(`/api/stock-note?${new URLSearchParams({code})}`, "stock-note");
-    if (!data || state.noteGeneration !== generation || !$("stock-note-dialog").open) return;
+    if (!data || state.noteGeneration !== generation || !$("tag-dialog").open) return;
     state.noteEditorData = data;
-    $("stock-note-label").textContent = `${data.name} · ${data.code}`;
+    $("tag-stock-label").textContent = `${data.name} · ${data.code}`;
     renderStockNoteHistory();
     $("stock-note-feedback").textContent = canEditNotes() ? "" : "当前为只读模式。";
     updateStockNoteControls();
-    if (canEditNotes()) $("stock-note-content").focus();
+    updateTagEditorControls();
+    if (focusNotes && canEditNotes()) $("stock-note-content").focus();
   } catch (error) {
-    if (state.noteGeneration !== generation || !$("stock-note-dialog").open) return;
+    if (state.noteGeneration !== generation || !$("tag-dialog").open) return;
     $("stock-note-feedback").textContent = "";
     $("stock-note-error").textContent = error.message;
     $("stock-note-error").hidden = false;
@@ -2125,15 +2323,20 @@ async function openStockNoteEditor(code) {
   }
 }
 
-function closeStockNoteEditor() {
-  if (state.noteSaving) return;
+function closeStockEditor() {
+  if (state.noteSaving || state.tagBlacklistSaving) return;
   clearTimeout(state.noteAutosaveTimer);
   state.noteGeneration = (state.noteGeneration || 0) + 1;
   state.requests["stock-note"]?.abort();
   state.noteEditorData = null;
   state.noteDrafts = new Map();
   state.noteUndoId = null;
-  $("stock-note-dialog").close();
+  state.tagEditingCode = null;
+  state.tagEditorData = null;
+  state.requests.tags?.abort();
+  state.requests["tag-editor-catalog"]?.abort();
+  hideTagSuggestions();
+  $("tag-dialog").close();
 }
 
 function applyStockNoteEditorUpdate(data, entryId, keepInputs = false) {
@@ -2153,7 +2356,7 @@ function applyStockNoteEditorUpdate(data, entryId, keepInputs = false) {
 function scheduleStockNoteAutosave(event) {
   clearTimeout(state.noteAutosaveTimer);
   updateStockNoteControls();
-  if (!canEditNotes() || !state.noteEditorData || !$("stock-note-dialog").open || state.noteClosing || state.noteComposing || event?.isComposing || !state.noteDrafts.size) return;
+  if (!canEditNotes() || !state.noteEditorData || !$("tag-dialog").open || state.stockEditorFinishing || state.noteComposing || event?.isComposing || !state.noteDrafts.size) return;
   $("stock-note-feedback").textContent = "有修改待保存…";
   state.noteAutosaveTimer = setTimeout(flushStockNoteDrafts, 500);
 }
@@ -2164,12 +2367,12 @@ function flushStockNoteDrafts() {
   const generation = state.noteGeneration;
   const run = async () => {
     if (state.noteSaving && !(await state.noteWritePromise)) return false;
-    if (!canEditNotes() || !state.noteEditorData || !$("stock-note-dialog").open || state.noteComposing || generation !== state.noteGeneration) return false;
+    if (!canEditNotes() || !state.noteEditorData || !$("tag-dialog").open || state.noteComposing || generation !== state.noteGeneration) return false;
     captureStockNoteDrafts();
     while (state.noteDrafts.size) {
       const id = state.noteDrafts.keys().next().value;
       if (!(await saveStockNoteEditor({preventDefault() {}}, id, true))) return false;
-      if (generation !== state.noteGeneration || !$("stock-note-dialog").open || state.noteComposing) return false;
+      if (generation !== state.noteGeneration || !$("tag-dialog").open || state.noteComposing) return false;
       captureStockNoteDrafts();
     }
     return true;
@@ -2180,23 +2383,38 @@ function flushStockNoteDrafts() {
   return promise;
 }
 
-async function finishStockNoteEditor() {
-  if (state.noteClosing) return;
-  if (!canEditNotes() || !state.noteEditorData) { closeStockNoteEditor(); return; }
-  captureStockNoteDrafts();
-  for (const id of [...state.noteDrafts.keys(), ...($("stock-note-content").value.trim() ? [null] : [])]) {
-    const fields = stockNoteFields(id);
-    if (!fields.time.reportValidity() || !fields.content.reportValidity()) return;
+async function finishStockEditor(saveTags = false) {
+  if (state.stockEditorFinishing || state.tagBlacklistSaving || state.noteComposing) return;
+  const tags = saveTags && canEditTags() && state.tagEditorData;
+  if (tags) {
+    if ($("tag-new").value.trim() && !addTagDraft()) return;
+    if (!$("tag-editor-form").reportValidity()) return;
   }
-  state.noteClosing = true;
+  const notes = canEditNotes() && state.noteEditorData;
+  if (notes) {
+    captureStockNoteDrafts();
+    for (const id of [...state.noteDrafts.keys(), ...($("stock-note-content").value.trim() ? [null] : [])]) {
+      const fields = stockNoteFields(id);
+      if (!fields.time.reportValidity() || !fields.content.reportValidity()) return;
+    }
+  }
+  state.stockEditorFinishing = true;
+  updateTagEditorControls();
   updateStockNoteControls();
   try {
-    if (!(await flushStockNoteDrafts())) return;
-    if ($("stock-note-content").value.trim() && !(await saveStockNoteEditor({preventDefault() {}}, null))) return;
-    closeStockNoteEditor();
+    if (notes) {
+      if (!(await flushStockNoteDrafts())) return;
+      if ($("stock-note-content").value.trim() && !(await saveStockNoteEditor({preventDefault() {}}, null))) return;
+    }
+    const tagsChanged = tags && (state.tagDraft.length !== tags.tags.length || state.tagDraft.some((tag, index) => tag !== tags.tags[index]));
+    if (tagsChanged) await saveTagEditor();
+    else closeStockEditor();
   } finally {
-    state.noteClosing = false;
-    if ($("stock-note-dialog").open) updateStockNoteControls();
+    state.stockEditorFinishing = false;
+    if ($("tag-dialog").open) {
+      updateTagEditorControls();
+      updateStockNoteControls();
+    }
   }
 }
 
@@ -2208,7 +2426,7 @@ function saveStockNoteEditor(event, entryId = null, autosave = false) {
 
 async function persistStockNoteEditor(event, entryId, autosave) {
   event.preventDefault();
-  if (!canEditNotes() || !state.noteEditorData || !$("stock-note-dialog").open) return false;
+  if (!canEditNotes() || !state.noteEditorData || !$("tag-dialog").open) return false;
   const fields = stockNoteFields(entryId);
   if (!fields || !fields.time.reportValidity() || !fields.content.reportValidity()) return false;
   if (entryId === null && !fields.content.value.trim()) return false;
@@ -2241,13 +2459,13 @@ async function persistStockNoteEditor(event, entryId, autosave) {
     state.noteSaving = false;
     state.noteAutoSaving = false;
     updateStockNoteControls();
-    if (!autosave && !state.noteClosing && $("stock-note-error").hidden) stockNoteFields(entryId)?.content.focus();
+    if (!autosave && !state.stockEditorFinishing && $("stock-note-error").hidden) stockNoteFields(entryId)?.content.focus();
     if (!autosave && $("stock-note-error").hidden && state.noteDrafts.size) scheduleStockNoteAutosave();
   }
 }
 
 function changeStockNoteEntryEditor(event, entryId, action) {
-  if (state.noteSaving || state.noteClosing) { event.preventDefault(); return Promise.resolve(false); }
+  if (state.noteSaving || state.stockEditorFinishing) { event.preventDefault(); return Promise.resolve(false); }
   clearTimeout(state.noteAutosaveTimer);
   return state.noteWritePromise = persistStockNoteEntryChange(event, entryId, action);
 }
@@ -4050,6 +4268,25 @@ $("nav-tags").addEventListener("click", () => { loadTagManager(); $("main").scro
 bindTagManager();
 bindTagBatch();
 $("nav-intraday").addEventListener("click", () => { loadIntraday(); $("main").scrollIntoView({block: "start"}); });
+$("nav-seven").addEventListener("click", () => { loadSeven(); $("main").scrollIntoView({block: "start"}); });
+$("seven-exclude-st").addEventListener("change", loadSeven);
+$("seven-exclude-gem").addEventListener("change", loadSeven);
+$("seven-types-toggle").addEventListener("click", event => {
+  const button = event.currentTarget, extra = $("seven-types-extra");
+  extra.hidden = !extra.hidden;
+  button.setAttribute("aria-expanded", String(!extra.hidden));
+  button.textContent = extra.hidden ? "展开收盘破板和待核实" : "收起收盘破板和待核实";
+});
+$("seven-scrollbar").addEventListener("scroll", event => { $("seven-scroll").scrollLeft = event.target.scrollLeft; });
+$("seven-scroll").addEventListener("scroll", event => { $("seven-scrollbar").scrollLeft = event.target.scrollLeft; });
+window.addEventListener("resize", updateSevenScrollbar);
+$("seven-runs").addEventListener("click", event => {
+  const stock = event.target.closest("[data-seven-code]");
+  if (stock) {
+    chooseStock({code: stock.dataset.sevenCode, name: stock.textContent});
+    $("search-workspace").scrollIntoView({block: "start"});
+  }
+});
 $("minute-date").addEventListener("change", () => changeMinuteDate());
 $("minute-prev-date").addEventListener("click", () => navigateMinuteDate("previous"));
 $("minute-next-date").addEventListener("click", () => navigateMinuteDate("next"));
@@ -4228,7 +4465,7 @@ $("blacklist-table-area").addEventListener("click", event => {
 document.addEventListener("click", event => { if (!event.target.closest("#blacklist-add-form")) hideBlacklistSuggestions(); });
 $("back-to-date").addEventListener("click", returnToDate);
 $("edit-stock-profile-tags").addEventListener("click", () => {
-  if (state.selectedStock) openTagEditor(state.selectedStock.code);
+  if (state.selectedStock) openStockEditor(state.selectedStock.code);
 });
 $("board-options").addEventListener("click", (event) => { const button = event.target.closest("[data-boards]"); if (button && button.dataset.boards !== state.boards) { state.boards = button.dataset.boards; loadDate(); } });
 $("date-table-area").addEventListener("click", (event) => { const button = event.target.closest("[data-stock-code]"); if (button) chooseStock({ code: button.dataset.stockCode, name: button.dataset.stockName }); });
@@ -4264,21 +4501,19 @@ $("exclude-gem").addEventListener("change", event => {
 });
 $("date-table-area").addEventListener("click", event => {
   const button = event.target.closest("[data-edit-stock-tags]");
-  if (button) openTagEditor(button.dataset.editStockTags);
+  if (button) openStockEditor(button.dataset.editStockTags);
 });
-["close-tags", "cancel-tags"].forEach(id => $(id).addEventListener("click", closeTagEditor));
-$("tag-dialog").addEventListener("cancel", event => { if (state.tagSaving || state.tagBlacklistSaving) event.preventDefault(); });
+["close-tags", "cancel-tags"].forEach(id => $(id).addEventListener("click", () => finishStockEditor()));
 $("tag-blacklist").addEventListener("change", changeTagBlacklist);
 $("tag-editor-list").addEventListener("input", event => {
   if (!event.target.matches("[data-tag-index]")) return;
   const index = Number(event.target.dataset.tagIndex), parents = state.tagDraft[index].split("/").slice(0, -1);
   state.tagDraft[index] = [...parents, event.target.value].join("/");
-  state.tagUseSource = false;
   updateTagEditorPaths();
 });
 $("tag-editor-list").addEventListener("click", event => {
   const button = event.target.closest("[data-remove-tag]");
-  if (button) { state.tagDraft.splice(Number(button.dataset.removeTag), 1); state.tagUseSource = false; renderTagEditor(); }
+  if (button) { state.tagDraft.splice(Number(button.dataset.removeTag), 1); renderTagEditor(); }
 });
 $("tag-new").addEventListener("input", onTagSuggestionInput);
 $("tag-new").addEventListener("focus", () => { state.tagSuggestionsActive = true; renderTagSuggestions(); });
@@ -4286,30 +4521,21 @@ $("tag-new").addEventListener("keydown", onTagSuggestionKeydown);
 $("tag-new").addEventListener("blur", event => { if (!$("tag-new-suggestions").contains(event.relatedTarget)) hideTagSuggestions(); });
 $("tag-new-suggestions").addEventListener("mousedown", event => event.preventDefault());
 $("tag-new-suggestions").addEventListener("click", event => { const button = event.target.closest("[data-existing-tag-index]"); if (button) chooseExistingTag(Number(button.dataset.existingTagIndex)); });
-$("tag-dialog").addEventListener("close", () => { state.requests["tag-editor-catalog"]?.abort(); hideTagSuggestions(); });
 $("tag-dialog").addEventListener("scroll", positionTagSuggestions, true);
 window.addEventListener("resize", positionTagSuggestions);
 document.addEventListener("pointerdown", event => { if (!event.target.closest(".tag-new-picker")) hideTagSuggestions(); });
 $("add-tag").addEventListener("click", () => { if (state.tagEditorData) addTagDraft(); });
-$("restore-source-tags").addEventListener("click", () => {
-  if (!state.tagEditorData) return;
-  state.tagDraft = defaultEditorTags(state.tagEditorData);
-  state.tagUseSource = true;
-  $("tag-new").value = "";
-  renderTagEditor();
-});
-$("tag-editor-form").addEventListener("submit", saveTagEditor);
-["close-stock-note", "cancel-stock-note"].forEach(id => $(id).addEventListener("click", finishStockNoteEditor));
-$("retry-stock-note").addEventListener("click", () => openStockNoteEditor(state.noteEditingCode));
+$("tag-editor-form").addEventListener("submit", event => { event.preventDefault(); finishStockEditor(true); });
+$("retry-stock-note").addEventListener("click", () => loadEditorNotes(state.noteEditingCode, true));
 $("stock-note-content").addEventListener("input", updateStockNoteControls);
 $("stock-note-time").addEventListener("input", updateStockNoteControls);
 $("add-stock-note-date").addEventListener("click", () => expandStockNoteDate());
 $("remove-stock-note-date").addEventListener("click", () => removeStockNoteDate());
-$("stock-note-dialog").addEventListener("keydown", stockNoteKeydown);
+$("stock-editor-notes").addEventListener("keydown", stockNoteKeydown);
 $("stock-note-history").addEventListener("input", scheduleStockNoteAutosave);
 $("stock-note-history").addEventListener("change", scheduleStockNoteAutosave);
-$("stock-note-dialog").addEventListener("compositionstart", () => { state.noteComposing = true; clearTimeout(state.noteAutosaveTimer); });
-$("stock-note-dialog").addEventListener("compositionend", event => {
+$("stock-editor-notes").addEventListener("compositionstart", () => { state.noteComposing = true; clearTimeout(state.noteAutosaveTimer); });
+$("stock-editor-notes").addEventListener("compositionend", event => {
   state.noteComposing = false;
   if (event.target.closest("[data-note-id]")) scheduleStockNoteAutosave();
 });
@@ -4322,10 +4548,10 @@ $("stock-note-history").addEventListener("click", event => {
   if (remove) changeStockNoteEntryEditor(event, Number(remove.dataset.deleteNote), "delete");
 });
 $("undo-stock-note").addEventListener("click", event => { if (state.noteUndoId) changeStockNoteEntryEditor(event, state.noteUndoId, "restore"); });
-for (const container of [$("date-table-area"), $("stock-profile-note"), $("minute-stock-note")]) {
+for (const container of [$("date-table-area"), $("stock-profile-note"), $("minute-stock-note"), $("seven-runs")]) {
   container.addEventListener("click", event => {
     const button = event.target.closest("[data-edit-stock-note]");
-    if (button) openStockNoteEditor(button.dataset.editStockNote);
+    if (button) openStockEditor(button.dataset.editStockNote, true);
   });
   for (const name of ["pointerover", "focusin"]) container.addEventListener(name, event => {
     const button = event.target.closest(".stock-note-button");
@@ -4432,11 +4658,11 @@ new MutationObserver(() => {
   if (state.shareholderAnchor && (!state.shareholderAnchor.isConnected || state.shareholderAnchor.getClientRects().length === 0)) hideShareholderTooltip();
 }).observe(document.body, {childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"]});
 $("stock-note-form").addEventListener("submit", saveStockNoteEditor);
-$("stock-note-dialog").addEventListener("cancel", event => { event.preventDefault(); finishStockNoteEditor(); });
-$("stock-note-dialog").addEventListener("click", event => {
-  if (event.target !== $("stock-note-dialog")) return;
+$("tag-dialog").addEventListener("cancel", event => { event.preventDefault(); finishStockEditor(); });
+$("tag-dialog").addEventListener("click", event => {
+  if (event.target !== $("tag-dialog")) return;
   const rect = event.target.getBoundingClientRect();
-  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) finishStockNoteEditor();
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) finishStockEditor();
 });
 $("date-table-area").addEventListener("scroll", updateIndustryNavigation, true);
 window.addEventListener("scroll", updateIndustryAboveHints, {passive: true});
@@ -4551,7 +4777,12 @@ async function restoreFromURL({remember = false} = {}) {
   $("trade-date").value = params.get("date") || state.meta.query_dates?.at(-1) || state.meta.latest_date || state.meta.dates.at(-1) || "";
   const boards = Number(params.get("boards"));
   state.boards = Number.isSafeInteger(boards) && boards > 0 ? String(boards) : "";
-  const view = params.get("view") === "tags" ? "tags" : params.get("view") === "intraday" ? "intraday" : params.get("view") === "blacklist" ? "blacklist" : params.get("code") ? "stock" : "date";
+  const viewParam = params.get("view");
+  const view = viewParam === "777" ? "seven" : ["tags", "intraday", "blacklist"].includes(viewParam) ? viewParam : params.get("code") ? "stock" : "date";
+  if (view === "seven") {
+    $("seven-exclude-st").checked = params.get("seven_st") !== "1";
+    $("seven-exclude-gem").checked = params.get("seven_gem") !== "1";
+  }
   if (view === "tags") state.tagManagerName = params.get("tag") || "";
   if (view === "intraday") {
     $("minute-timeline-exclude-gem").checked = params.get("timeline_gem") !== "1";
@@ -4568,6 +4799,7 @@ async function restoreFromURL({remember = false} = {}) {
   // Initial loads and history traversal may normalize a URL, but never add a visit.
   updateURL({replace: true});
   if (view === "intraday") await loadIntraday();
+  else if (view === "seven") await loadSeven();
   else if (view === "tags") await loadTagManager();
   else if (view === "blacklist") await loadBlacklist();
   else if (view === "stock") await loadStock({remember});

@@ -70,8 +70,8 @@ class TagPathInputTests(unittest.TestCase):
                 self.save(labels, **options)
             self.assertEqual((self.tree(), db.get_stock_tags(self.conn, "000001"), db.get_tag_aliases(self.conn)), before)
         tags.delete_tag(self.conn, "电机", tags.catalog(self.conn)["revision"], True)
-        with self.assertRaisesRegex(ValueError, "删除"):
-            self.save(["机器人/电机"])
+        self.assertEqual(self.save(["机器人/电机"])["tags"], ["电机"])
+        self.assertEqual(self.tree()["电机"], "机器人")
 
     def test_source_labels_notes_and_blacklist_survive(self):
         self.conn.execute("INSERT INTO stock_default_tags VALUES (?,?,?,?,?,?)",

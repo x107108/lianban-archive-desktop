@@ -186,8 +186,11 @@ class TagManagementTests(unittest.TestCase):
             self.assertEqual(current["tags"], [tag for tag in previous if tag != "机器人"])
             self.assertNotIn("机器人", current["custom_tags"])
             self.assertNotIn("机器人", current["source_tags"])
-        for table in ("stock_tag_overrides", "stock_default_tags", "events", "stock_tag_exclusions", "stock_notes", "stock_blacklist"):
+        for table in ("stock_default_tags", "events", "stock_notes", "stock_blacklist"):
             self.assertEqual(self.snapshot()[table], before[table], table)
+        for table in ("stock_tag_overrides", "stock_tag_exclusions"):
+            self.assertTrue(all("机器人" not in json.loads(row[0]) for row in self.conn.execute(
+                "SELECT tags_json FROM " + table + " WHERE tags_json IS NOT NULL")))
         self.assertNotIn("机器人", self.request("/api/meta")["body"]["tag_order"])
         for row in db.date_view(self.conn, "2026-10-21")["rows"]:
             self.assertNotIn("机器人", row["tags"])
@@ -200,14 +203,15 @@ class TagManagementTests(unittest.TestCase):
         tags.delete_tag(self.conn, "机器人", self.revision(), True)
         self.defaults("600003", ["人形机器人", "机器人", "风电"])
         self.assertEqual(db.get_stock_tags(self.conn, "600003")["tags"], ["人形机器人", "风电"])
-        restored = db.save_stock_tags(self.conn, "000001", [], old_editor["revision"], use_source=True)
+        current = db.get_stock_tags(self.conn, "000001")
+        restored = db.save_stock_tags(self.conn, "000001", [], current["revision"], use_source=True)
         self.assertCountEqual(restored["tags"], ["人形机器人", "风电"])
         with self.assertRaises(db.TagConflictError):
             db.save_stock_tags(self.conn, "000002", old_editor["tags"], 1, alias_revision=old_editor["tag_alias_revision"])
         db.save_stock_tags(self.conn, "600003", ["人形机器人"], 0)
-        with self.assertRaises(ValueError):
-            db.save_stock_tags(self.conn, "600003", ["机器人"], 1)
-        self.assertCountEqual([tag["name"] for tag in tags.catalog(self.conn)["tags"]], ["人形机器人", "风电"])
+        db.save_stock_tags(self.conn, "600003", ["机器人"], 1)
+        self.assertEqual([row["code"] for row in tags.members(self.conn, "机器人")["rows"]], ["600003"])
+        self.assertCountEqual([tag["name"] for tag in tags.catalog(self.conn)["tags"]], ["人形机器人", "风电", "机器人"])
 
     def test_stale_delete_confirmation_and_invalid_requests_do_not_delete(self):
         pending = tags.delete_tag(self.conn, "机器人", self.revision())

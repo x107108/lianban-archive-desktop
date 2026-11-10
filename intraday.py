@@ -60,6 +60,13 @@ def connect(path):
             date TEXT PRIMARY KEY, stocks_json TEXT NOT NULL, source TEXT NOT NULL,
             fetched_at TEXT NOT NULL, raw_path TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS seven_minutes (
+            date TEXT NOT NULL, code TEXT NOT NULL, previous_close REAL NOT NULL,
+            points_json TEXT NOT NULL, interval INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(date,code)
+        );
+        CREATE TABLE IF NOT EXISTS seven_halts (
+            date TEXT NOT NULL, code TEXT NOT NULL, PRIMARY KEY(date,code)
+        );
     """)
     return conn
 

@@ -7,10 +7,12 @@
   <meta name="description" content="按交易日期与股票检索 A 股历史涨停和连板记录。">
   <title>连板档案 · A 股复盘</title>
   <link rel="preload" href="/fonts/NotoSansSC-VF.woff2?v=20261017-1" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/styles.css?v=20261101-industry-above-hints-1">
-  <script src="/app.js?v=20261101-classification-time-order-1" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=20261110-stock-editor-surfaces">
+  <link rel="stylesheet" href="/boardui-home.css?v=20261110-stock-tag-focus">
+  <script src="/ui-theme.js?v=20261110-stock-add-state" defer></script>
+  <script src="/app.js?v=20261110-stock-add-state" defer></script>
 </head>
-<body>
+<body class="boardui-preview">
   <a class="skip-link" href="#main">跳到主要内容</a>
   <aside class="sidebar" aria-label="主导航">
     <a class="brand" href="/" aria-label="连板档案首页"><span class="brand-bars"><i></i><i></i><i></i></span></a>
@@ -18,6 +20,18 @@
     <nav class="side-nav" aria-label="查询方式">
       <button class="nav-item active" id="nav-search" aria-label="历史检索" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><span>检索</span></button>
       <button class="nav-item" id="nav-intraday" aria-label="主板分时"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18M5 16l4-6 4 3 6-8"/></svg><span>分时</span></button>
+      <button class="nav-item" id="nav-seven" aria-label="777">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <g fill="none" stroke="currentColor" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3.7 9.8a6.8 6.8 0 0 1 13.6 0M2.9 18.4v1.5h15.2v-1.5"/>
+            <rect x="1.6" y="9.8" width="17.8" height="8.6" rx="1.4"/>
+            <path d="M7.7 11.9v4.5m5.6-4.5v4.5M3.8 12.6h2.4l-1.5 3.1m4.7-3.1h2.4l-1.5 3.1m4.7-3.1h2.4l-1.5 3.1M19.4 13.1h1v2h-1m1-1h1.6V9.4"/>
+            <circle cx="22" cy="8.25" r="1.15"/>
+          </g>
+          <path fill="currentColor" stroke="none" d="m10.5 4.7.6 1.2 1.4.2a.3.3 0 0 1 .2.5l-1 1 .2 1.4a.3.3 0 0 1-.4.3l-1.2-.7-1.2.7a.3.3 0 0 1-.4-.3l.2-1.4-1-1a.3.3 0 0 1 .2-.5l1.4-.2.6-1.2a.3.3 0 0 1 .4 0Z"/>
+        </svg>
+        <span>777</span>
+      </button>
     </nav>
     <div class="side-bottom">
       <nav class="side-nav side-utilities" aria-label="管理与说明">
@@ -141,6 +155,38 @@
       </section>
     </section>
 
+    <section id="seven-view" class="panel seven-view" aria-labelledby="seven-title" hidden>
+      <header class="seven-heading">
+        <div><h2 id="seven-title">七板周期</h2><p id="seven-summary" role="status"></p></div>
+        <div id="seven-years" class="seven-years" hidden>
+          <h3>各年七板封住</h3>
+          <dl id="seven-years-list" title="按七板日期归年，同一股票同一年只计一次，随筛选更新"></dl>
+        </div>
+        <div class="seven-filters" role="group" aria-label="七板周期筛选">
+          <label class="hide-st-control"><input id="seven-exclude-st" type="checkbox" checked>屏蔽 ST</label>
+          <label class="hide-st-control"><input id="seven-exclude-gem" type="checkbox" checked>屏蔽创业板</label>
+        </div>
+      </header>
+      <section id="seven-types" class="seven-types" aria-labelledby="seven-types-title" hidden>
+        <div class="seven-types-heading">
+          <h3 id="seven-types-title">首板至七板的板型占比</h3>
+          <p id="seven-types-sample"></p>
+        </div>
+        <div class="seven-types-table" role="region" aria-label="首板至七板类型占比" tabindex="0">
+          <table aria-labelledby="seven-types-title">
+            <thead><tr><th scope="col">板型</th><th scope="col">首板</th><th scope="col">2 板</th><th scope="col">3 板</th><th scope="col">4 板</th><th scope="col">5 板</th><th scope="col">6 板</th><th scope="col">7 板</th></tr></thead>
+            <tbody id="seven-types-body"></tbody>
+            <tbody id="seven-types-extra" hidden></tbody>
+          </table>
+        </div>
+        <button type="button" id="seven-types-toggle" class="text-button" aria-expanded="false" aria-controls="seven-types-extra">展开收盘破板和待核实</button>
+      </section>
+      <div id="seven-scrollbar" class="seven-scrollbar" role="region" aria-label="横向滚动分时图" tabindex="0" hidden><div></div></div>
+      <div id="seven-scroll" class="seven-scroll" role="region" aria-label="七板周期分时图" tabindex="0">
+        <div id="seven-runs" aria-busy="false"></div>
+      </div>
+    </section>
+
     <footer class="footer"><span><span class="footer-mark"></span>连板档案 <span class="footer-divider">/</span> A 股历史复盘实验</span><span id="footer-source">公开数据</span></footer>
   </main>
   <button type="button" id="back-to-top" class="back-to-top" aria-label="返回顶部" title="返回顶部" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V7m-6 6 6-6 6 6M5 4h14"/></svg><span>顶部</span></button>
@@ -150,24 +196,39 @@
   <div id="shareholder-tooltip" class="shareholder-tooltip" role="dialog" aria-label="共同股东" tabindex="0" hidden></div>
   <dialog id="shareholder-info-dialog" class="method-dialog shareholder-info-dialog" aria-labelledby="shareholder-info-title"><div class="dialog-heading"><h2 id="shareholder-info-title">共同股东说明</h2><button type="button" id="close-shareholder-info" class="icon-button" aria-label="关闭共同股东说明"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="shareholder-info-content" class="shareholder-info-content"></div></dialog>
   <div id="stock-note-tooltip" class="stock-note-tooltip" role="tooltip" tabindex="0" hidden></div>
-  <dialog id="stock-note-dialog" class="tag-dialog stock-note-dialog" aria-labelledby="stock-note-title">
-    <div class="tag-dialog-heading"><div><span class="eyebrow">STOCK NOTE</span><h2 id="stock-note-title">编辑股票备注</h2><p id="stock-note-label"></p></div><button type="button" class="icon-button" id="close-stock-note" aria-label="关闭备注"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+  <dialog id="tag-dialog" class="tag-dialog stock-editor-dialog" aria-labelledby="tag-dialog-title">
+    <div class="tag-dialog-heading"><div><span class="eyebrow">STOCK PROFILE</span><h2 id="tag-dialog-title">编辑股票资料</h2><p id="tag-stock-label"></p></div><button type="button" class="icon-button" id="close-tags" aria-label="关闭股票资料" autofocus><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+    <div class="stock-editor-scroll">
+    <div id="stock-editor-body" class="stock-editor-body">
+    <form id="tag-editor-form" class="stock-editor-section" aria-labelledby="stock-editor-tags-title">
+      <div class="stock-editor-section-heading"><h3 id="stock-editor-tags-title">标签</h3></div>
+      <div id="tag-editor-list" class="tag-editor-list"></div>
+      <div class="tag-add-row"><div class="tag-new-picker"><label class="sr-only" for="tag-new">新标签</label><input type="text" id="tag-new" placeholder="搜索标签，或输入 父级/子标签" maxlength="300" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="tag-new-suggestions" aria-autocomplete="list"><ul id="tag-new-suggestions" class="tag-new-suggestions" role="listbox" aria-label="匹配的已有标签" hidden></ul></div><button type="button" class="button secondary small" id="add-tag" disabled>添加</button></div>
+      <p class="tag-editor-error" id="tag-editor-error" role="alert" hidden></p>
+    </form>
+    <section id="stock-editor-notes" class="stock-editor-section" aria-labelledby="stock-note-title">
+    <div class="stock-editor-section-heading"><h3 id="stock-note-title">备注</h3></div>
     <form id="stock-note-form">
-      <label class="stock-note-field-label" for="stock-note-content">备注内容</label>
-      <div class="stock-note-node stock-note-compose"><div class="stock-note-node-body"><div class="stock-note-input"><button type="button" class="icon-button stock-note-date-button" id="add-stock-note-date" aria-label="为新增备注设置日期" title="设置日期" aria-controls="stock-note-date-tag" aria-expanded="false" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 11h16m-8 3v4m-2-2h4"/></svg></button><span class="stock-note-date-tag" id="stock-note-date-tag" hidden><label class="sr-only" for="stock-note-time">新增备注日期（可选）</label><input id="stock-note-time" type="date" disabled><button type="button" class="stock-note-date-remove" id="remove-stock-note-date" aria-label="移除新增备注日期" title="移除日期" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button></span><textarea id="stock-note-content" maxlength="5000" rows="1" aria-label="新增备注内容" placeholder="输入备注，回车添加…" required></textarea></div><button type="submit" class="button primary small" id="save-stock-note">添加</button></div></div>
+      <div class="stock-note-node stock-note-compose"><div class="stock-note-node-body"><div class="stock-note-input"><button type="button" class="icon-button stock-note-date-button" id="add-stock-note-date" aria-label="为新增备注设置日期" title="设置日期" aria-controls="stock-note-date-tag" aria-expanded="false" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 11h16m-8 3v4m-2-2h4"/></svg></button><span class="stock-note-date-tag" id="stock-note-date-tag" hidden><label class="sr-only" for="stock-note-time">新增备注日期（可选）</label><input id="stock-note-time" type="date" disabled><button type="button" class="stock-note-date-remove" id="remove-stock-note-date" aria-label="移除新增备注日期" title="移除日期" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button></span><textarea id="stock-note-content" maxlength="5000" rows="1" aria-label="新增备注内容" placeholder="输入备注，回车添加…" required></textarea></div><button type="submit" class="button secondary small" id="save-stock-note" disabled>添加</button></div></div>
       <div class="stock-note-help"><p>日期标签可选、可移除 · 回车添加 · Shift＋回车换行</p><span id="stock-note-count">0 / 5000</span></div>
     </form>
     <div id="stock-note-history" class="stock-note-history" role="region" aria-label="全部历史备注"></div>
     <p id="stock-note-feedback" class="stock-note-feedback" role="status" aria-live="polite"></p><p id="stock-note-error" class="tag-editor-error" role="alert" hidden></p>
-    <div class="tag-dialog-actions"><button type="button" class="text-button" id="retry-stock-note" hidden>重新读取</button><button type="button" class="text-button" id="undo-stock-note" hidden>撤销删除</button><div><button type="button" class="button primary" id="cancel-stock-note">保存</button></div></div>
-  </dialog>
-  <dialog id="tag-dialog" class="tag-dialog" aria-labelledby="tag-dialog-title">
-    <div class="tag-dialog-heading"><div><span class="eyebrow">STOCK TAGS</span><h2 id="tag-dialog-title">编辑股票标签</h2><p id="tag-stock-label"></p></div><button type="button" class="icon-button" id="close-tags" aria-label="关闭标签编辑"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
-    <p class="tag-dialog-hint">标签跟随股票保存，切换日期后仍然生效。行业布局会按标签及跨板数关联展示。</p>
-    <form id="tag-editor-form"><div id="tag-editor-list" class="tag-editor-list"></div><div class="tag-add-row"><div class="tag-new-picker"><label class="sr-only" for="tag-new">新标签</label><input type="text" id="tag-new" placeholder="搜索标签，或输入 父级/子标签" maxlength="300" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="tag-new-suggestions" aria-autocomplete="list"><ul id="tag-new-suggestions" class="tag-new-suggestions" role="listbox" aria-label="匹配的已有标签" hidden></ul></div><button type="button" class="button secondary small" id="add-tag">添加</button></div><p class="tag-source-label" id="tag-source-label"></p><p class="tag-editor-error" id="tag-editor-error" role="alert" hidden></p>
-      <div id="tag-blacklist-control" class="tag-blacklist-control"><label class="tag-blacklist-option" for="tag-blacklist"><input type="checkbox" id="tag-blacklist" disabled aria-label="黑名单" aria-describedby="tag-blacklist-hint"><span>黑名单<span id="tag-blacklist-hint" class="tag-blacklist-hint">勾选加入，取消勾选移出 · 立即生效</span></span></label><span id="tag-blacklist-status" class="tag-blacklist-status" role="status"></span></div>
-      <p id="tag-blacklist-error" class="tag-editor-error" role="alert" hidden></p>
-      <div class="tag-dialog-actions"><button type="button" class="text-button" id="restore-source-tags">恢复默认标签</button><div><button type="button" class="button secondary" id="cancel-tags">取消</button><button type="submit" class="button primary" id="save-tags">保存标签</button></div></div></form>
+    <button type="button" class="text-button" id="retry-stock-note" hidden>重新读取</button>
+    <button type="button" class="text-button" id="undo-stock-note" hidden>撤销删除</button>
+    </section>
+    </div>
+    </div>
+    <div class="tag-dialog-actions">
+      <div id="tag-blacklist-control" class="tag-blacklist-control">
+        <label class="tag-blacklist-option" for="tag-blacklist">
+          <input type="checkbox" id="tag-blacklist" disabled aria-label="黑名单" aria-describedby="tag-blacklist-hint">
+          <span>黑名单<span id="tag-blacklist-hint" class="tag-blacklist-hint">勾选加入，取消勾选移出 · 立即生效</span><span id="tag-blacklist-status" class="tag-blacklist-status" role="status"></span></span>
+        </label>
+        <p id="tag-blacklist-error" class="tag-editor-error" role="alert" hidden></p>
+      </div>
+      <div class="stock-editor-buttons"><button type="button" class="button secondary" id="cancel-tags">关闭</button><button type="submit" form="tag-editor-form" class="button primary" id="save-tags">保存</button></div>
+    </div>
   </dialog>
   <dialog id="tag-merge-dialog" class="tag-dialog tag-merge-dialog" aria-labelledby="tag-merge-title"><div class="dialog-heading"><h2 id="tag-merge-title">已有同名标签</h2><button type="button" id="tag-merge-close" class="icon-button" aria-label="关闭标签合并提示">×</button></div><p id="tag-merge-message"></p><p id="tag-merge-error" class="tag-editor-error" role="alert" hidden></p><div class="tag-dialog-actions"><span></span><div><button type="button" id="tag-merge-cancel" class="button secondary">取消</button><button type="button" id="tag-merge-confirm" class="button primary">合并标签</button></div></div></dialog>
   <dialog id="tag-delete-dialog" class="tag-dialog tag-merge-dialog" aria-labelledby="tag-delete-title"><div class="dialog-heading"><h2 id="tag-delete-title">删除整个标签</h2><button type="button" id="tag-delete-close" class="icon-button" aria-label="关闭标签删除提示">×</button></div><p id="tag-delete-message"></p><p id="tag-delete-error" class="tag-editor-error" role="alert" hidden></p><div class="tag-dialog-actions"><span></span><div><button type="button" id="tag-delete-cancel" class="button secondary">取消</button><button type="button" id="tag-delete-confirm" class="button primary">确认删除</button></div></div></dialog>

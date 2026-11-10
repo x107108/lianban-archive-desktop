@@ -13,3 +13,4 @@ dist/
 *.p12
 *.lnk
 tests/test-data/
+ui/home/node_modules/

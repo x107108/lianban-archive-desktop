@@ -1,19 +1,26 @@
 const assert = require("node:assert/strict"), fs = require("node:fs"), vm = require("node:vm");
 const source = fs.readFileSync(require("node:path").join(__dirname,"../web/app.js"),"utf8");
-const tooltip = {hidden:true,innerHTML:"",style:{},getBoundingClientRect:()=>({width:530,height:400,top:12}),querySelector:()=>({focus(){}}),querySelectorAll:()=>[]};
+const marketSection = {innerHTML:""};
+const tooltip = {hidden:true,innerHTML:"",style:{},getBoundingClientRect:()=>({width:530,height:400,top:12}),querySelector:selector=>selector==="[data-shareholder-market-values]"?marketSection:{focus(){}},querySelectorAll:()=>[]};
 const infoDialog={open:false,showModal(){this.open=true;},close(){this.open=false;}};
 const infoContent={innerHTML:""};
-const pending=[];
+const pending=[], marketRequests=[];
 const tradeDate={value:"2026-10-29"};
 const context=vm.createContext({$:id=>id==="trade-date"?tradeDate:id==="shareholder-info-dialog"?infoDialog:id==="shareholder-info-content"?infoContent:tooltip,state:{requests:{}},URLSearchParams,setTimeout,clearTimeout,
-  document:{},window:{innerWidth:1200,innerHeight:800},request:(url)=>new Promise((resolve,reject)=>pending.push({url,resolve,reject}))});
+  document:{},window:{innerWidth:1200,innerHeight:800},request:(url)=>new Promise((resolve,reject)=>(url.startsWith("/api/stock-market-values?")?marketRequests:pending).push({url,resolve,reject}))});
 vm.runInContext(source.slice(source.indexOf("function escapeHTML"),source.indexOf("function textValue")),context);
 vm.runInContext(source.slice(source.indexOf("function hideShareholderTooltip"),source.indexOf("function hideStockNoteTooltip")),context);
 vm.runInContext(source.slice(source.indexOf("function shareholderHasAlert"),source.indexOf("function renderStockCard")),context);
 const data={code:"000001",name:"本股<&名称",total:1,profiles:[{scope:"total",report_date:"2026-09-30",fetched_at:"2026-10-29T08:00:00+08:00"},{scope:"float",report_date:"2026-06-30",fetched_at:"2026-10-29T08:00:00+08:00"}],
-  own_holders:{total:[{name:"本股机构<&",type:"其他",report_date:"2026-09-30",holding_ratio:46.74}],float:[{name:"香港中央结算有限公司",type:"香港中央结算有限公司",report_date:"2026-06-30",holding_ratio:21.110242096267}]},
+  own_holders:{total:[
+    {name:"本股机构<&",type:"其他",report_date:"2026-09-30",holding_ratio:46.74,holding_shares:180000000},
+    {name:"第二位股东",type:"个人",report_date:"2026-09-30",holding_ratio:5.19,holding_shares:20000000}
+  ],float:[{name:"香港中央结算有限公司",type:"香港中央结算有限公司",report_date:"2026-06-30",holding_ratio:21.110242096267,holding_shares:120000000}]},
   date:"2026-10-29",date_status:"provisional",date_fetched_at:"2026-10-29T10:30:00+08:00",date_stale:true,
-  rows:[{code:"000002",name:"关联<&股票",same_day_limit_up:true,shared_count:1,holders:[{name:"共同<script>机构",type:"投资公司",reports:[{scope:"float",date:"2026-09-30"}]}]}],
+  rows:[{code:"000002",name:"关联<&股票",same_day_limit_up:true,shared_count:1,holders:[{name:"共同<script>机构",type:"投资公司",
+    own_relations:[{kind:"total",date:"2026-09-30",holding_shares:7250000,holding_ratio:6.25}],reports:[
+    {scope:"total",date:"2026-10-15",holding_shares:2755000,holding_ratio:2.75},
+    {scope:"float",date:"2026-09-30",holding_shares:0,holding_ratio:null}]}]}],
   coverage:2,requested:5,status:"updating",source:"公开源",scope_note:"按完整名称匹配"};
 function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,attributes:{},
   setAttribute(k,v){this.attributes[k]=v},removeAttribute(k){delete this.attributes[k]},getBoundingClientRect:()=>({left:1100,top:700,bottom:724})};}
@@ -25,9 +32,17 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   assert.equal(pending[0].url,"/api/stock-shareholders?code=000001&date=2026-10-29");
   assert.equal(tooltip.hidden,false);
   pending[0].resolve(data);await first;
+  assert.equal(marketRequests[0].url,"/api/stock-market-values?code=000001&date=2026-10-29");
+  assert.ok(tooltip.innerHTML.includes("正在读取市值") && tooltip.innerHTML.includes("共同股东"));
+  marketRequests[0].resolve({date:data.date,total:5171852308.33,circulating:4745005711.11,free_float:2778208120,free_float_date:"2026-10-28"});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(marketSection.innerHTML.includes("51.72")&&marketSection.innerHTML.includes("27.78")&&marketSection.innerHTML.includes("自由流通股本 2026-10-28"));
   assert.ok(tooltip.innerHTML.includes("当日同涨停")&&tooltip.innerHTML.includes("盘中暂定")&&tooltip.innerHTML.includes("涨停快照延迟"));
   assert.ok(tooltip.innerHTML.includes("共同&lt;script&gt;机构")&&!tooltip.innerHTML.includes("<script>"));
-  assert.ok(tooltip.innerHTML.includes("关联&lt;&amp;股票")&&tooltip.innerHTML.includes("十大流通 2026-09-30"));
+  assert.doesNotMatch(tooltip.innerHTML,/披露口径|占总股本|占总流通股本/);
+  assert.match(tooltip.innerHTML,/<th scope="col"><strong>本股&lt;&amp;名称<\/strong><\/th>\s*<th scope="col"><strong>关联&lt;&amp;股票<\/strong><\/th>/);
+  assert.match(tooltip.innerHTML,/十大股东<\/th>[\s\S]*?title="7,250,000 股">725 万股[\s\S]*?6\.25%[\s\S]*?2026-09-30[\s\S]*?title="2,755,000 股">276 万股[\s\S]*?2\.75%[\s\S]*?2026-10-15/);
+  assert.match(tooltip.innerHTML,/十大流通股东<\/th>[\s\S]*?暂无该名单记录[\s\S]*?<strong title="0 股">0 万股<\/strong><strong>未披露/);
   assert.ok(parseFloat(tooltip.style.left)+530<=1188);
   assert.ok(parseFloat(tooltip.style.top)+400<700);
   assert.ok(tooltip.innerHTML.includes('aria-label="共同股东说明"'));
@@ -76,7 +91,8 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   const controlHTML=context.renderShareholderTooltip(controlled);
   assert.ok(controlHTML.includes('class="shareholder-control-columns"')&&controlHTML.includes('<h4>控股股东</h4>')&&controlHTML.includes('<h4>实际控制人</h4>'),"control and actual-control roles have separate columns");
   assert.ok(controlHTML.includes("经 华通&lt;&amp;集团")&&!controlHTML.includes("华通<&集团"));
-  assert.ok(controlHTML.includes("本股：上层股东；对方：实际控制人")&&controlHTML.includes("1 项共同关系"));
+  assert.match(controlHTML, /控制关系<\/th><td>上层股东<\/td><td>实际控制人/);
+  assert.ok(controlHTML.includes("1 项共同关系")&&!controlHTML.includes('class="shareholder-peer-figures"'),"control-only relationships do not imply disclosed holdings");
   assert.ok(controlHTML.includes('data-shareholder-block-group="state" aria-checked="false"'),"state owners have a visible grouped filter");
   context.state.shareholderAlertTypes=new Map([["001219",["国资"]]]);
   assert.equal(context.shareholderHasAlert("001219"),true);
@@ -99,15 +115,22 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   assert.deepEqual([...tooltip.innerHTML.matchAll(/data-shareholder-tab="([^"]+)"/g)].map(match=>match[1]),["common","float","holders","subsidiaries"]);
   assert.ok(tooltip.innerHTML.includes("报告期 2026-09-30")&&!tooltip.innerHTML.includes("报告期 2026-06-30"));
   assert.ok(tooltip.innerHTML.includes("本股机构&lt;&amp;")&&!tooltip.innerHTML.includes("香港中央结算有限公司</span>"),"the total-holder tab contains only its own list and ignores common-holder blocks");
-  assert.ok(tooltip.innerHTML.includes("占总股本")&&!tooltip.innerHTML.includes("占总流通股本")&&!tooltip.innerHTML.includes("shareholder-own-summary"));
+  assert.match(tooltip.innerHTML,/合计持股占比<\/span>\s*<small>2 位股东 · 占总股本<\/small><\/div>\s*<strong>51\.93%<\/strong>/);
+  assert.ok(!tooltip.innerHTML.includes("占总流通股本"));
+  assert.ok(tooltip.innerHTML.includes("合计持股数")&&tooltip.innerHTML.includes("200,000,000 股")&&tooltip.innerHTML.includes("持股数（股）"));
   assert.ok(tooltip.innerHTML.includes("46.74%"));
   const missingRatios=context.renderShareholderTooltip({...data,own_holders:{total:[{name:"真实零比例",type:"个人",holding_ratio:0},{name:"未披露比例",type:"个人",holding_ratio:null}],float:[]}});
+  assert.match(missingRatios,/已披露比例合计<\/span>\s*<small>1 \/ 2 位股东已披露 · 占总股本<\/small><\/div>\s*<strong>0\.00%<\/strong>/);
   assert.ok(missingRatios.includes("0.00%")&&missingRatios.includes("未披露"),"zero is displayed distinctly from an absent ratio");
   context.switchShareholderTab("float");
   assert.equal(pending.length,readsBeforeTabs,"both shareholder tabs reuse the fetched stock data");
   assert.ok(tooltip.innerHTML.includes("报告期 2026-06-30")&&!tooltip.innerHTML.includes("报告期 2026-09-30"));
   assert.ok(tooltip.innerHTML.includes("香港中央结算有限公司")&&!tooltip.innerHTML.includes("本股机构&lt;&amp;"));
   assert.ok(tooltip.innerHTML.includes("占总流通股本")&&tooltip.innerHTML.includes("21.1102%")&&tooltip.innerHTML.includes("合计持股占比"));
+  assert.ok(tooltip.innerHTML.includes("120,000,000 股")&&!tooltip.innerHTML.includes("200,000,000"),"totals use only the selected list");
+  const partialShares=context.renderShareholderTooltip({...data,own_holders:{float:[
+    ...data.own_holders.float,{name:"另一个股东",type:"个人",holding_shares:30000},{name:"未披露",type:"个人"}]}});
+  assert.ok(partialShares.includes("120,030,000 股")&&partialShares.includes("已披露持股数合计")&&partialShares.includes("2 / 3 位股东已披露"));
   const summary = ratios => {
     const html=context.renderShareholderTooltip({...data,own_holders:{float:ratios.map((holding_ratio,i)=>({name:`股东${i}`,type:"其他",holding_ratio}))}});
     return html.match(/<div class="shareholder-own-summary">[\s\S]*?<\/strong><\/div>/)?.[0] || "";
@@ -302,7 +325,7 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   for(const type of ["基金","QFII","保险","社保","券商","信托","AMC"]) assert.equal(context.shareholderTypeBlocked(type),false,"one financial-group choice applies to every detailed member");
   assert.equal(buttons[1].classList["has-shareholder-alert"],true,"restoring the financial group restores AMC dots");
   assert.equal(buttons[0].classList["has-shareholder-alert"],false,"the corporate group remains blocked independently");
-  assert.ok(tooltip.innerHTML.includes('>AMC · 十大股东'),"peer details retain the specific AMC classification");
+  assert.ok(tooltip.innerHTML.includes('>AMC</small>'),"peer details retain the specific AMC classification");
   toggleGroup("company",false);
   assert.equal(buttons[0].classList["has-shareholder-alert"],true);
   toggleGroup("company",true);

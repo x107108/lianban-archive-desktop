@@ -12,6 +12,7 @@ import database as db
 import intraday
 
 AUCTION_URL = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_Bill.GetBillList"
+BROKEN_POOL_SOURCE = "选股宝公开破板池（全市场）"
 _lock = threading.Lock()
 _stock_locks = {}
 _workers = threading.BoundedSemaphore(4)
@@ -104,6 +105,12 @@ def collect_broken_pool(archive_path, day):
             raise ValueError("该日期不在项目已知交易日历中")
     if not intraday.broken_pool_view(archive_path, day)["needs_collection"]:
         return intraday.overview(archive_path, day, include_live=True)
+    fetch_broken_pool(archive_path, day)
+    return intraday.overview(archive_path, day, include_live=True)
+
+
+def fetch_broken_pool(archive_path, day):
+    """Validate and cache all markets; the main-board picker still filters its own scope."""
     import provider
     raw_dir = Path(archive_path).resolve().parent / "intraday_raw"
     payload, raw_path = fetch_json(provider.POOL_URL, {"pool_name": "limit_up_broken", "date": day}, raw_dir, f"broken_{day}")
@@ -115,25 +122,24 @@ def collect_broken_pool(archive_path, day):
         if not re.fullmatch(r"\d{6}\.(SS|SH|SZ|BJ)", symbol):
             raise ValueError("破板来源股票代码无效")
         code, name = symbol[:6], re.sub(r"\s+", "", str(item.get("stock_chi_name") or ""))
-        first = provider._time_on_day(item.get("first_limit_up"), "first_limit_up", day)
-        last = provider._time_on_day(item.get("last_limit_up"), "last_limit_up", day)
+        first = provider._time_on_day(item["first_limit_up"], "first_limit_up", day) if item.get("first_limit_up") else None
+        last = provider._time_on_day(item["last_limit_up"], "last_limit_up", day) if item.get("last_limit_up") else None
         broken = provider._time_on_day(item.get("last_break_limit_up"), "last_break_limit_up", day)
-        if not name or item.get("limit_up_days") != 0 or not first <= last <= broken or item.get("break_limit_up_times", 0) <= 0:
+        if (not name or item.get("limit_up_days") != 0 or item.get("break_limit_up_times", 0) <= 0
+                or any(clock and clock > broken for clock in (first, last))):
             raise ValueError("来源未证明该股票触板后未封住，保留已有缓存")
         close = intraday.number(item.get("price"), positive=True)
         change = provider._number(item.get("change_percent"), "change_percent") * 100
         if change <= -100:
             raise ValueError("破板股票涨跌幅无效")
-        if intraday.is_mainboard(code) and not db.is_st_name(name):
-            if code in records:
-                raise ValueError("破板名单存在重复股票")
-            records[code] = {"date": day, "code": code, "name": name, "market": db.market_for(code), "boards": 0,
-                             "stock_type": "broken", "close": close, "pct_change": change,
-                             "first_time": first, "broken_time": broken}
+        if code in records:
+            raise ValueError("破板名单存在重复股票")
+        records[code] = {"date": day, "code": code, "name": name, "market": db.market_for(code), "boards": 0,
+                         "stock_type": "broken", "close": close, "pct_change": change,
+                         "first_time": first, "broken_time": broken}
     with closing(intraday.connect(intraday.store_path(archive_path))) as conn, conn:
         conn.execute("INSERT INTO broken_pools VALUES (?,?,?,?,?) ON CONFLICT(date) DO UPDATE SET stocks_json=excluded.stocks_json,source=excluded.source,fetched_at=excluded.fetched_at,raw_path=excluded.raw_path",
-                     (day, json.dumps(list(records.values()), ensure_ascii=False, allow_nan=False), "选股宝公开破板池", db.now_iso(), raw_path))
-    return intraday.overview(archive_path, day, include_live=True)
+                     (day, json.dumps(list(records.values()), ensure_ascii=False, allow_nan=False), BROKEN_POOL_SOURCE, db.now_iso(), raw_path))
 
 
 def tencent_reference(payload, symbol, day):

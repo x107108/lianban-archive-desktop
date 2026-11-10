@@ -1,5 +1,8 @@
 # 第三方组件与来源
 
+- BoardUI 免费组件及主题采用 MIT 许可。完整许可见 [LICENSE-BOARDUI](ui/home/LICENSE-BOARDUI)，来源见 [BoardUI 公开仓库](https://github.com/BoardUI/boardui)。
+- 「777」种子由已校验的公开分时和破板结果生成。历史 5 分钟价格来自 [BaoStock](https://baostock.com/)，日期、证券代码及收盘价格通过校验后入库。
+
 - Windows Python 运行环境：Python Software Foundation 官方 CPython 3.13.16 x64 嵌入包，完整原始 ZIP 随项目提供；安装时解包的 `LICENSE.txt` 保留其许可及第三方声明。官方发布页：https://www.python.org/downloads/release/python-31316/ 。
 - Python 依赖：`requests`、`xlrd`、`truststore`、`pypinyin`、`urllib3`、`certifi`、`charset-normalizer`、`idna`。固定版本见 `requirements.txt`，未经改写的 wheel 来自 PyPI；其 `.dist-info` 元数据和许可证随安装完整保留。来源及文件散列见 `vendor/SOURCES.json`。
 - 网页字体：Google Fonts / Adobe 的 Noto Sans SC，SIL OFL 1.1。完整许可证和来源见 `web/fonts/OFL.txt`、`web/fonts/SOURCE.md`。

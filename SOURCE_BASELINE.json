@@ -1,17 +1,17 @@
 {
   "project": "lianban-archive-desktop",
-  "source_commit": "ffa0f166cc6991cc1b556d293f0c8c976e527e6e",
-  "source_date": "2026-11-03",
+  "source_commit": "1b70ec1560dd318a45e736eb73b198e27c76ec43",
+  "source_date": "2026-11-10",
   "identity_sha256": {
-    "app.py": "bca73b0ca86d68291bdd151224f78865ed1239be8482e154cc72f2188dae177c",
+    "app.py": "097cb201bc92f4e9758425b9583019dbd998b945f714dc83bef6a777e2329fa6",
     "backup_db.py": "541b45b764d721fbaed7a2ad6ca39d7936ef7c115d33f154967c1e054c71a914",
     "collect_intraday.py": "ad056aba69a24f2814ea1b6d859b7b5255c92aa546bb8c12802bd8b1aece4f19",
     "concept_tags.py": "775fd3031faacd1bcea2c54df672ac8420a8a161384524bef43310b9ec5f4179",
-    "database.py": "8b267c9caa18bb82bb5b5b4db6b8a141ba2f70b0ef97cb7d3a6fa1f9f57a8e63",
+    "database.py": "e487a6725e72d4b3a4317bbfd6965f11245b51d60d969a4d17be6639c9263c65",
     "import_manual.py": "f7ad15f1d39c0c2c6adff769a987290594c5f9348c770aa61b571e6f75635c77",
-    "industry.py": "cdb1dda2a1d216326756762de99bed3cb9449c2caa6ac3b46f7476666d6f462b",
-    "intraday.py": "78258ea9024f9c165e5bd26a8cac3a0b643cf13f6e0ff961ab2d532daaaf1517",
-    "intraday_sources.py": "2c593483f9a2e759c3485ba400fe9579ef715963c3645e0de185bc216e23a90b",
+    "industry.py": "2944a772e86163b2b4f7ea34071a849d39006068ddacdf0bebe6d3580fe1eaf7",
+    "intraday.py": "636508ef008be1547adfbd71356afd57591aecaa012a092392d16c3ac9dfd002",
+    "intraday_sources.py": "ca098d0854fd994f01acfb05b8c1f1a518e51ead1ef04ebe7cb98198f15d7869",
     "intraday_timeline.py": "be8d54a679828fff173b7528454ae144862adc452941222cb0086998db61329d",
     "live_pool.py": "326d92c847f31a205610efe14f13911b2fff0f0989ba7a4dbfe091e4c85ed52f",
     "live_update.py": "3919c186178b561f311b022aff28a6a9a9f52b062ebaede1a3900d0383d14b69",
@@ -19,22 +19,26 @@
     "provinces.py": "e3fc2108bd9ddea86f3c081a40cfc524ed58b1cdfd07a308d5e857348757b02c",
     "registration.py": "83925eb8edc0a3abdc63ece99290df59df3f56a31d8e1a95516d9f71f87f73f0",
     "relationships.py": "c7408a304581995fb470e95b2afce634a6f54ec682f8083f647e1f9f1d244b71",
-    "shareholders.py": "49f274cdf87278a93497715680d8f69a611aa818c3b2e2d75a1588cd5f93b60e",
+    "shareholders.py": "4c396a03f25d061eadca9711932a94696a47e16bddb1a66a74086b65e643211e",
     "suspension.py": "5b90dcf49f3f33ca0b4347f45fcb521a6571908abd3ff28c4e6dae8114215c12",
     "sync_data.py": "580744d67624b4f0e129c60d448a02739ce68ab4bf5488f6ef0f0964ca8f9f5d",
-    "tag_management.py": "9bce111a1721f54475c2698836540fe253622e64f2db26f4da46c374efa696d5",
-    "web/app.js": "7b95ce104ba3aa2daefb92113e08cbb90417a04f44977073401d20800111e8cc",
+    "tag_management.py": "673575572db792b81d56df29e957f98496b97d45d1a98f7e25fd801995794114",
+    "web/app.js": "bbab870e0392d5b077d2af06b596fd2d63be3c9ec4eb8534bc2d05da7b7e71e0",
     "web/fonts/NotoSansSC-VF.woff2": "7fabc1ef45ba1bd4d8dea904f51f408cfb515cf56c5ad813836df34c01171159",
     "web/fonts/OFL.txt": "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9",
     "web/fonts/SOURCE.md": "59c7342b9060486786ac37f018f9f20d7f6cbf6763aaad1fe439086c02f7503c",
     "web/images/title-companions.jpg": "c69048e24698593955967ee22f2982235ee2b0fec1df9c67940f27a34f79dc67",
-    "web/index.html": "d9dddd082986df92293a67ee9b8758dbf566a717b6ec78e25c24491a308a954a",
-    "web/styles.css": "e68098198021f178a0e49e143b388d2ae2601f5b364372fc18ebd753a4a76c1f",
+    "web/index.html": "299a01294428a854e86ad5f008282c3999a67ea6781d18717a0135ccdc4ee97b",
+    "web/styles.css": "145845cf9a194886e59d827299abc30f2fb3532e5e6ddff6c89802fd09fe8c8b",
     "app_version.py": "b96cf7196fe2080507bfb3d492c57e27b2cbffdc4edd2a2fa0a634dbdf5c6ef8",
     "control_owners.py": "fe4d976ea1f6a54ff0aa88cf6a4a547e4b1bb1279adcba4ea05c237b6e62378b",
     "subsidiaries.py": "23eacb6d2be339429512b88fdd96fa2ed5abca5c24ceeb1ba374b89a70488514",
     "shareholder_types.py": "817773141ea0041008c5e8c3dc690a77ddc64bf61f87f328b0172c36159bddcf",
-    "docs/SHAREHOLDER-TYPES.md": "357cdfcc757ff5a6bcc0273ecb3d5ec8bae7b36ad7f903fc316b23c560b08fa4"
+    "docs/SHAREHOLDER-TYPES.md": "357cdfcc757ff5a6bcc0273ecb3d5ec8bae7b36ad7f903fc316b23c560b08fa4",
+    "market_values.py": "34deb796edc05a4505619bffa45aed5ed09507faf1e705370e69133396056c36",
+    "seven_boards.py": "af30d3af917b27a0104045d15bfa4ac8f0c10231b8667306a2330f343dd72d7f",
+    "web/boardui-home.css": "2f0469b6c3af32ea05d3bb07ab0eaa390333098b74d5d2b5e1630c6dead8bf70",
+    "web/ui-theme.js": "28bcaa730e7889f3d147466d248d85ad13258976de2d119f71b9ecad55d92ff7"
   },
   "excluded_personal_tables": [
     "stock_tag_overrides",
@@ -44,15 +48,15 @@
     "stock_note_entries",
     "stock_note_options"
   ],
-  "description": "Authorized full local feature/UI sync from ffa0f16 on 2026-11-03. Retain Windows/Mac installers, personal migration, shared notices, edition defaults and existing personal data. Public labels merged; author notes and blacklist excluded.",
+  "description": "Full local feature and UI sync, including the BoardUI theme and 777 archive. Shareable market data is seeded separately. Existing shared channel, notices and shareholder filter defaults are preserved.",
   "published_tags_included": true,
   "authorized_adaptations": {
     "web/app.js": {
-      "source_sha256": "6498a3072b0fdde956d9146b9ad1efebb5a45261d101b0f6378206412fa39ff3",
+      "source_sha256": "c887c437d0815c77be65146ed71ed33202a7774ac203ff14310c6ce5cd4141c5",
       "reason": "Preserve shared defaults: fund, Other and QFII blocked; newly split clearing/company/AMC preferences inherit effective Other choice and existing explicit choices win."
     },
     "app_version.py": {
-      "source_sha256": "e9cab0befd58213346b0cdec085c9dad9dc2cd0f918c5334ef437a714d894316",
+      "source_sha256": "e75f25e25b200181891cc624369b750a61b91e4f5539c20b46ef0349cbc2519d",
       "reason": "Read actual installed shared VERSION.json with shared channel, independently of local test and server versions."
     },
     "docs/SHAREHOLDER-TYPES.md": {
@@ -61,6 +65,14 @@
     },
     "shareholder_types.py": {
       "reason": "Documentation reference points to the shipped public provenance document; classification logic matches the frozen source."
+    },
+    "market_values.py": {
+      "reason": "Shareable public data sources replace the restricted ELTDX dependency. Unverified data remains missing.",
+      "source_sha256": "ea4ed723b30859898f075e1e6a8734d9bc1bc872b5b5b3e83bf66e844124634c"
+    },
+    "seven_boards.py": {
+      "reason": "Shareable public data sources replace the restricted ELTDX dependency. Unverified data remains missing.",
+      "source_sha256": "753e39d2d3d80baceee43ecb45c220f51e8797a07c42e2dd43b44ccd5412dc10"
     }
   }
 }

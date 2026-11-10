@@ -97,8 +97,10 @@ class HierarchyTests(unittest.TestCase):
         tags.delete_tag(self.conn, "仿生", self.revision(), True)
         self.assertEqual(self.tree()["人形"], "智能机械")
         self.assertIn("人形", db.get_stock_tags(self.conn, "000001")["tags"])
-        with self.assertRaises(ValueError):
-            self.node("仿生")
+        self.node("仿生")
+        self.assertEqual(self.tree()["仿生"], "")
+        self.assertEqual(tags.members(self.conn, "仿生")["count"], 0)
+        self.assertEqual(self.tree()["人形"], "智能机械")
 
     def test_merge_cannot_create_indirect_cycle_and_rolls_back_aliases(self):
         self.setup_tree()

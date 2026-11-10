@@ -3,10 +3,12 @@ const assert=require('node:assert/strict'), fs=require('node:fs'), vm=require('n
 const source=fs.readFileSync(require('node:path').join(__dirname,'../web/app.js'),'utf8');
 const elements=new Map(), listeners=new Map(), calls=[];
 let board={scrollLeft:8500}, resolveDate, failed=false, paths=[];
+let startDate;
+const dateStarted=new Promise(resolve=>{startDate=resolve;});
 const view={scrollX:0,scrollY:4600,scrollTo(position){this.scrollX=position.left;this.scrollY=position.top;}};
 function $(id){
   if(!elements.has(id)){
-    const el={value:'',hidden:false,disabled:false,open:false,textContent:'',
+    const el={value:'',hidden:false,disabled:false,open:false,textContent:'',style:{},
       setAttribute(name,value){this[name]=value;},removeAttribute(name){delete this[name];},reportValidity:()=>true,
       querySelector:()=>board,querySelectorAll:selector=>id==='tag-editor-list'&&selector==='[data-tag-path]'?paths:[],
       addEventListener(type,fn){listeners.set(`${id}:${type}`,fn);},
@@ -20,8 +22,8 @@ function $(id){
 }
 const hierarchy=[{name:'机器人',parent:''},{name:'电机',parent:'机器人'},{name:'驱动<&>',parent:'电机'}];
 const context=vm.createContext({$,URLSearchParams,window:view,state:{tab:'date',requests:{},meta:{tag_hierarchy:hierarchy},
-  tagDraft:['机器人','驱动<&>'],tagEditorData:{code:'000678',revision:2,source_tags:['驱动<&>']},tagUseSource:false},
-  canEditTags:()=>true,canEditBlacklist:()=>true,clearError(){},loadShareholderAlerts(){},
+  tagDraft:['机器人','驱动<&>'],tagEditorData:{code:'000678',revision:2,tags:['机器人'],source_tags:['驱动<&>']}},
+  canEditTags:()=>true,canEditNotes:()=>false,canEditBlacklist:()=>true,clearTimeout,clearError(){},loadShareholderAlerts(){},
   getDateQuery:()=>new URLSearchParams({date:'2026-10-28'}),
   setView(){throw new Error('quiet refresh must not switch/reset the view');},
   loadingHTML(){throw new Error('quiet refresh must not replace the matrix with loading content');},
@@ -29,7 +31,7 @@ const context=vm.createContext({$,URLSearchParams,window:view,state:{tab:'date',
   async request(url,channel,options){
     if(url==='/api/stock-tags') {calls.push(JSON.parse(options.body));if(failed)throw new Error('保存失败');return {tags:context.state.tagDraft};}
     if(url==='/api/tags')return {tags:[{name:'机器人',count:10},{name:'驱动<&>',count:1}],hierarchy,revision:'r2'};
-    if(url.startsWith('/api/date?'))return new Promise(resolve=>{resolveDate=resolve;});
+    if(url.startsWith('/api/date?'))return new Promise(resolve=>{resolveDate=resolve;startDate();});
     throw new Error(url);
   }});
 for(const [from,to] of [['function escapeHTML','function debounce'],['function stockTags','function canEditTags'],
@@ -41,7 +43,6 @@ $('trade-date').value='2026-10-28';$('tag-dialog').open=true;$('date-table-area'
 context.renderTagEditor();
 assert.equal(paths.find(p=>p.dataset.tagPath==='0').hidden,true,'explicit root remains its own editable membership');
 assert.equal(paths.find(p=>p.dataset.tagPath==='1').textContent,'机器人 / 电机 /');
-assert.equal($('tag-source-label').textContent,'默认标签：机器人 / 电机 / 驱动<&>');
 const markup=$('tag-editor-list').innerHTML;
 assert.ok(markup.includes('value="驱动&lt;&amp;&gt;"'),'only the actual name is editable and escaped');
 listeners.get('tag-editor-list:input')({target:{matches:()=>true,dataset:{tagIndex:'1'},value:'电机'}});
@@ -54,8 +55,8 @@ listeners.get('tag-editor-list:input')({target:{matches:()=>true,dataset:{tagInd
 assert.equal(context.state.tagDraft[2],'机器人/电机/修改子级','editing a new leaf retains its pending parent path');
 context.state.tagDraft.pop();context.renderTagEditor();
 (async()=>{
-  const save=context.saveTagEditor({preventDefault(){}});
-  while(!resolveDate)await Promise.resolve();
+  const save=context.finishStockEditor(true);
+  await Promise.race([save,dateStarted]);
   assert.equal($('tag-dialog').open,true,'dialog remains open throughout the background refresh');
   assert.equal($('save-tags').textContent,'正在保存…');assert.equal($('save-tags').disabled,true);
   assert.equal($('date-table-area').innerHTML,'original matrix');
@@ -65,8 +66,9 @@ context.state.tagDraft.pop();context.renderTagEditor();
   assert.equal(calls.at(-2),'render');assert.equal(calls.at(-1),'close');
   assert.equal(board.scrollLeft,8500,'horizontal end position survives replacing the matrix and dialog focus restoration');
   assert.equal(view.scrollY,4600,'page end position survives refresh and dialog closure');
-  assert.equal($('save-tags').textContent,'保存标签');assert.equal(context.state.tagSaving,false);
-  $('tag-dialog').open=true;failed=true;await context.saveTagEditor({preventDefault(){}});
+  assert.equal(context.state.stockEditorFinishing,false);
+  $('tag-dialog').open=true;context.state.tagEditorData={code:'000678',revision:3,tags:['机器人']};
+  failed=true;await context.finishStockEditor(true);
   assert.equal($('tag-dialog').open,true);assert.equal($('tag-editor-error').hidden,false);
   assert.equal($('save-tags').disabled,false);assert.equal(board.scrollLeft,8500);assert.equal(view.scrollY,4600);
   console.log('Tag editor: full hierarchy paths, safe drafts, no skeleton collapse, loading through refresh, retained XY scroll and failure drafts passed.');

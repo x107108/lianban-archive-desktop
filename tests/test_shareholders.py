@@ -46,10 +46,24 @@ class ShareholderTests(unittest.TestCase):
                 json.dumps([{"code": code} for code in codes]), "synthetic", self.now.isoformat(), None, ""))
 
     def test_deduplication_and_current_snapshot_not_all_history(self):
+        with self.conn:
+            self.conn.execute("UPDATE stock_shareholders SET holding_shares=7250000,holding_ratio=6.25 "
+                              "WHERE code='000001' AND holder_key='共同机构' AND scope='total'")
+            self.conn.execute("UPDATE stock_shareholders SET holding_shares=2750000,holding_ratio=2.75 "
+                              "WHERE code='000002' AND holder_key='共同机构' AND scope='total'")
+            self.conn.execute("UPDATE stock_shareholders SET report_date='2026-06-30',holding_shares=1500000,holding_ratio=3.125 "
+                              "WHERE code='000002' AND holder_key='共同机构' AND scope='float'")
         result = self.view()
         self.assertEqual([r["code"] for r in result["rows"]], ["000002", "000003", "000004"])
         self.assertEqual(result["rows"][0]["shared_count"], 2)
-        self.assertEqual(len(result["rows"][0]["holders"][0]["reports"]), 2)
+        holder = next(holder for holder in result["rows"][0]["holders"] if holder["name"] == "共同机构")
+        own_report = next(relation for relation in holder["own_relations"] if relation["kind"] == "total")
+        self.assertEqual((own_report["date"], own_report["holding_shares"], own_report["holding_ratio"]),
+                         ("2026-09-30", 7250000, 6.25))
+        self.assertEqual(holder["reports"], [
+            {"scope": "total", "date": "2026-09-30", "holding_shares": 2750000, "holding_ratio": 2.75},
+            {"scope": "float", "date": "2026-06-30", "holding_shares": 1500000, "holding_ratio": 3.125},
+        ])
         self.seed(["000004"], {"000004": ["新机构"]}, "2026-10-15")
         self.assertNotIn("000004", [r["code"] for r in self.view()["rows"]])
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM events").fetchone()[0], 4)
@@ -184,6 +198,19 @@ class ShareholderTests(unittest.TestCase):
             self.seed(["000001"], {"000001": ["旧机构"]}, "2026-06-30")
         self.assertEqual([tuple(r) for r in self.conn.execute("SELECT * FROM stock_shareholders")], before)
 
+    def test_backfill_preserves_both_scopes_for_a_regressed_stock_and_updates_others(self):
+        previous = [tuple(r) for r in self.conn.execute("SELECT * FROM stock_shareholders WHERE code='000001'")]
+        def holder(code, report):
+            return {"code": code, "holder_key": "机构", "holder_name": "机构", "holder_type": "其他",
+                    "report_date": report, "holding_ratio": 1, "holding_shares": 123}
+        pending = sh.save_batch(self.conn, ["000001", "000002"], {
+            "total": [holder("000001", "2026-10-15"), holder("000002", "2026-10-15")],
+            "float": [holder("000001", "2026-06-30"), holder("000002", "2026-10-15")],
+        }, keep_unavailable=True)
+        self.assertEqual(pending, {"000001"})
+        self.assertEqual([tuple(r) for r in self.conn.execute("SELECT * FROM stock_shareholders WHERE code='000001'")], previous)
+        self.assertEqual([r[0] for r in self.conn.execute("SELECT holding_shares FROM stock_shareholders WHERE code='000002'")], [123, 123])
+
     def test_parent_owner_matches_declared_controller_without_changing_its_role(self):
         payload = {"success": True, "result": {"count": 3, "pages": 1, "data": [
             {"SECUCODE": "000001.SZ", "SECURITY_CODE": "000001", "CONTROL_HOLDER": control.PARENT_OWNER_VIA,
@@ -257,16 +284,19 @@ class ShareholderTests(unittest.TestCase):
             normalize({k: v for k, v in row.items() if k != "FREE_HOLDNUM_RATIO"}, "float")
 
     def test_saved_ratios_stay_with_their_scope_date_and_sort_unknown_after_zero(self):
-        def records(ratios, day):
+        def records(entries, day):
             return [{"code": "000001", "holder_name": name, "holder_key": name, "holder_type": "其他",
-                     "report_date": day, "holding_ratio": ratio} for name, ratio in ratios]
+                     "report_date": day, "holding_ratio": ratio, "holding_shares": shares}
+                    for name, ratio, shares in entries]
         sh.save_batch(self.conn, ["000001"], {
-            "total": records([("股东甲", 46.74), ("股东乙", 1.25), ("股东零", 0), ("股东未披露", None)], "2026-10-15"),
-            "float": records([("股东甲", 47.915932123188), ("股东乙", 3.5)], "2026-09-30")})
+            "total": records([("股东甲", 46.74, 4674), ("股东乙", 1.25, 125), ("股东零", 0, 0), ("股东未披露", None, None)], "2026-10-15"),
+            "float": records([("股东甲", 47.915932123188, 4312), ("股东乙", 3.5, 315)], "2026-09-30")})
         own = self.view()["own_holders"]
         self.assertEqual([r["holding_ratio"] for r in own["total"]], [46.74, 1.25, 0, None])
         self.assertEqual(own["float"][0]["holding_ratio"], 47.915932123188)
         self.assertEqual(own["float"][0]["report_date"], "2026-09-30")
+        self.assertEqual([r["holding_shares"] for r in own["total"]], [4674, 125, 0, None])
+        self.assertEqual([r["holding_shares"] for r in own["float"]], [4312, 315])
         self.assertTrue(all(r[0] == 1 for r in self.conn.execute("SELECT ratio_checked FROM shareholder_profiles WHERE code='000001'")))
 
     def test_existing_cache_migrates_and_backfills_even_when_24h_cache_is_fresh(self):
@@ -280,12 +310,15 @@ class ShareholderTests(unittest.TestCase):
             db.save_day(conn, "2026-10-28", [{"code": "000001", "name": "本股", "boards": 1}], "synthetic")
             self.assertIsNone(conn.execute("SELECT holding_ratio FROM stock_shareholders").fetchone()[0])
             self.assertEqual(conn.execute("SELECT MIN(ratio_checked) FROM shareholder_profiles").fetchone()[0], 0)
+            self.assertIsNone(conn.execute("SELECT holding_shares FROM stock_shareholders").fetchone()[0])
+            self.assertEqual(conn.execute("SELECT MIN(shares_checked) FROM shareholder_profiles").fetchone()[0], 0)
+            conn.execute("UPDATE shareholder_profiles SET ratio_checked=1")
             db.set_settings(conn, shareholder_fetched_at=db.now_iso(), shareholder_requested=1)
         with patch.object(industry.threading, "Thread") as worker:
             sh.Refresher(path).maybe_refresh()
             worker.assert_called_once()
         record = {"code": "000001", "holder_key": "股东", "holder_name": "股东", "holder_type": "个人",
-                  "report_date": "2026-09-30", "holding_ratio": 20.25}
+                  "report_date": "2026-09-30", "holding_ratio": 20.25, "holding_shares": 1000101}
         with patch.object(sh, "fetch_batch", return_value=[record]) as fetch:
             self.assertEqual(sh.refresh(path), 1)
             self.assertEqual(fetch.call_count, 2)
@@ -293,6 +326,7 @@ class ShareholderTests(unittest.TestCase):
         with closing(db.connect(path)) as conn:
             self.assertEqual(conn.execute("SELECT MIN(ratio_checked) FROM shareholder_profiles").fetchone()[0], 1)
             self.assertEqual(sh.stock_view(conn, "000001")["own_holders"]["total"][0]["holding_ratio"], 20.25)
+            self.assertEqual(sh.stock_view(conn, "000001")["own_holders"]["total"][0]["holding_shares"], 1000101)
         with patch.object(industry.threading, "Thread") as worker:
             sh.Refresher(path).maybe_refresh()
             worker.assert_not_called()
@@ -359,6 +393,7 @@ class ShareholderTests(unittest.TestCase):
         self.assertNotIn("IS_MAX_REPORTDATE", params[1]["filter"][0])
         self.assertIn("END_DATE<=", params[1]["filter"][0])
         self.assertIn("HOLD_RATIO", params[0]["columns"][0])
+        self.assertIn("HOLD_NUM", params[0]["columns"][0])
         self.assertEqual(rows[0]["holding_ratio"], 12.34)
         incomplete = {"success": True, "result": {"count": 2, "pages": 1, "data": [row]}}
         with patch.object(sh, "urlopen", return_value=response(incomplete)), self.assertRaisesRegex(ValueError, "未完整返回"):
