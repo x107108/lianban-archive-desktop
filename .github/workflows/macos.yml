@@ -37,6 +37,7 @@ jobs:
           "$root/.runtime/macos/python/bin/python3" -m unittest discover -s tests -p test_shared_announcements.py
           "$root/.runtime/macos/python/bin/python3" -m unittest discover -s tests -p test_query_cache.py
           "$root/.runtime/macos/python/bin/python3" -m unittest discover -s tests -p test_suspension_history.py
+          "$root/.runtime/macos/python/bin/python3" -m unittest discover -s tests -p test_market_values.py
       - name: Real data-preserving upgrade and failed-start recovery
         run: python tools/verify_macos_upgrade.py '.build/全新 Mac 验收/lianban-archive-desktop'
       - uses: actions/upload-artifact@v4

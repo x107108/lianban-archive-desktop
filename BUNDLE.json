@@ -1,5 +1,5 @@
 {
-  "id": "b2662ab1874ab35f",
+  "id": "65df3533b44ae344",
   "runtime": "vendor/python-3.13.16-embed-amd64.zip",
   "wheels": [
     "vendor/wheels/baostock-0.9.2-py3-none-any.whl",
@@ -34,8 +34,8 @@
   "seed": "resources/archive-seed.sqlite3.gz",
   "seed_database_sha256": "cd5a17441e5e40a82d32fb8e46021f5d338ea0c2ebfff54c6a4ac6b55b167708",
   "sha256": {
-    "SOURCE_BASELINE.json": "a69eb41cac823c72d11529735d0143e13291c5a06b3a1f2de7defb653555c5b0",
-    "VERSION.json": "1eed1eea38fd5e06b4b9210eec61b2868f971181ad3c6c4d9247186abfa3f4be",
+    "SOURCE_BASELINE.json": "6ada34e9d2ce369502d325a31bfdeb97c07906bd0d708acc5fc191ab70b1d801",
+    "VERSION.json": "f4cb322934aae12e018bbc62ae77b08bc1c01a0bd27ca11947fb1cb495c181c5",
     "app.py": "a9157ef4f607d822e832f9111f7158998a3bc8f26ea8b0c9a41fe417d732adf1",
     "app_version.py": "b96cf7196fe2080507bfb3d492c57e27b2cbffdc4edd2a2fa0a634dbdf5c6ef8",
     "backup_db.py": "541b45b764d721fbaed7a2ad6ca39d7936ef7c115d33f154967c1e054c71a914",
@@ -45,6 +45,7 @@
     "convertible_bonds.py": "63841172f9762cddf2e9a7e90c22216394eac8d2a75f8cfcbbe1e812cfdc948d",
     "database.py": "a967929d550074c2db8708bc987f908e917cd76cb81bca131ab2d446590eb687",
     "desktop.py": "3bc3f62c57e944eed7133bf9b7386ab59f633b7dea143c3c08a6a3069421299f",
+    "docs/FREE-FLOAT.md": "b07ffde19ccbb84e361709cc13ffa7f2152f4ffa08dec528ae4b3df428bbf78d",
     "docs/SHAREHOLDER-TYPES.md": "357cdfcc757ff5a6bcc0273ecb3d5ec8bae7b36ad7f903fc316b23c560b08fa4",
     "import_manual.py": "f7ad15f1d39c0c2c6adff769a987290594c5f9348c770aa61b571e6f75635c77",
     "industry.py": "2944a772e86163b2b4f7ea34071a849d39006068ddacdf0bebe6d3580fe1eaf7",
@@ -62,7 +63,7 @@
     "macos-runtimes.json": "3d9eb23d5703159e1bfde08ee6acd774bf0e0a87134624920c4d3d587bd184c5",
     "macos-wheels.json": "563a37073b64b5b67062eede58d1b1212970a65a767540eb272b1a49b26dacdd",
     "macos_upgrade.py": "72781fdcc7572db2ce5d484e1d76784ccc200ae6a4dccfcae72ea85faa7f5221",
-    "market_values.py": "34deb796edc05a4505619bffa45aed5ed09507faf1e705370e69133396056c36",
+    "market_values.py": "2353795a9403bf586396aef533d163544f868dc3146cce2406c24e6e6d5023ab",
     "personal_data.py": "03ebefeaf4bdc5584d843ba434f37982c763ea16a87c366669f6f862a662edb0",
     "provider.py": "2cc252de4124888f681d7c178049ed9382d475ccafb6f0195dcfef35c781a822",
     "provinces.py": "e3fc2108bd9ddea86f3c081a40cfc524ed58b1cdfd07a308d5e857348757b02c",

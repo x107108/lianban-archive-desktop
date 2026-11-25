@@ -20,7 +20,7 @@
     "intraday_timeline.py": "b2c6e4a006e685c266495df92856d09ef16a6e3d1824a9472742657bfc6e4919",
     "live_pool.py": "326d92c847f31a205610efe14f13911b2fff0f0989ba7a4dbfe091e4c85ed52f",
     "live_update.py": "3919c186178b561f311b022aff28a6a9a9f52b062ebaede1a3900d0383d14b69",
-    "market_values.py": "34deb796edc05a4505619bffa45aed5ed09507faf1e705370e69133396056c36",
+    "market_values.py": "2353795a9403bf586396aef533d163544f868dc3146cce2406c24e6e6d5023ab",
     "provider.py": "2cc252de4124888f681d7c178049ed9382d475ccafb6f0195dcfef35c781a822",
     "provinces.py": "e3fc2108bd9ddea86f3c081a40cfc524ed58b1cdfd07a308d5e857348757b02c",
     "registration.py": "83925eb8edc0a3abdc63ece99290df59df3f56a31d8e1a95516d9f71f87f73f0",
@@ -43,7 +43,8 @@
     "web/intraday-compare.css": "f5f8a6ce55419c7026f6e4e4a939e93094df864d814767b2f82f45fb8a8ca62b",
     "web/intraday-compare.js": "e829fcdc17012131274aecbf766d24bc730425e06f0c6bb43dde289105fa7ae6",
     "web/styles.css": "04aa3d516bdd88468168a3895d8ace2f7a7c24484acd01765f0225ed7d15082f",
-    "web/ui-theme.js": "fd95e6820a9aff191e9ccf2a518e26df5cb6a9b9f63402bc42a7e270892c76e5"
+    "web/ui-theme.js": "fd95e6820a9aff191e9ccf2a518e26df5cb6a9b9f63402bc42a7e270892c76e5",
+    "docs/FREE-FLOAT.md": "b07ffde19ccbb84e361709cc13ffa7f2152f4ffa08dec528ae4b3df428bbf78d"
   },
   "excluded_personal_tables": [
     "stock_tag_overrides",
@@ -73,7 +74,7 @@
       "source_sha256": "4eb4ab64163cca2f3a2319cf4731898ebd357e9a2d4f69eb731e34d922b157ac"
     },
     "market_values.py": {
-      "reason": "Keep the existing public valuation source; unverified free-float shares remain missing, with no restricted dependency distributed.",
+      "reason": "Use the same dated Tongdaxin free-float statistics as local test via the standard report-file protocol, without a restricted binary dependency.",
       "source_sha256": "ea4ed723b30859898f075e1e6a8734d9bc1bc872b5b5b3e83bf66e844124634c"
     },
     "seven_boards.py": {

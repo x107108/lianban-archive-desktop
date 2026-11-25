@@ -16,4 +16,4 @@ Mac 完整安装包另附 Astral 维护的 [Python Standalone Builds](https://gi
 
 ## 2026.11.25 公开交易状态及开盘价
 
-BaoStock 0.9.2 用于核对停牌交易状态和不复权开盘价，随附原始发行包及许可；其依赖 pandas、NumPy、python-dateutil、tzdata 分别按目标系统打包，固定版本与 PyPI 原始下载地址、SHA-256 见 requirements.txt、vendor/SOURCES.json、macos-wheels.json。保留各 wheel 内的许可证和第三方声明。本版继续使用公开分钟来源，不分发本地测试环境的 ELTDX。自由流通股本未能从可发布来源核实时继续留空。
+BaoStock 0.9.2 用于核对停牌交易状态和不复权开盘价，随附原始发行包及许可；其依赖 pandas、NumPy、python-dateutil、tzdata 分别按目标系统打包，固定版本与 PyPI 原始下载地址、SHA-256 见 requirements.txt、vendor/SOURCES.json、macos-wheels.json。保留各 wheel 内的许可证和第三方声明。本版继续使用公开分钟来源，不分发本地测试环境的 ELTDX。v2026.11.25.1 起由标准库读取同一通达信报表的自由流通股本，来源、协议事实参考与日期规则见 docs/FREE-FLOAT.md。
