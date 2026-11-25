@@ -24,7 +24,21 @@ def build(architecture, output):
     bundle = json.loads((ROOT / 'BUNDLE.json').read_text())
     names = {name for name in bundle['sha256'] if not name.startswith('vendor/python-')}
     names.update(('README.md', 'AI_INSTALL.md', 'MACOS.md', 'THIRD_PARTY_NOTICES.md', 'macos-runtimes.json'))
+    # Native wheels are selected for the target architecture, never unpack Windows binaries on Mac.
+    names = {name for name in names if not name.endswith("win_amd64.whl")}
     files = {name: (ROOT / name).read_bytes() for name in names}
+    specs = json.loads((ROOT / "macos-wheels.json").read_text())[architecture]
+    for wheel in specs:
+        target = output / Path(wheel["file"]).name
+        if not target.exists():
+            with urlopen(wheel["url"], timeout=120) as response, target.open("xb") as handle:
+                while chunk := response.read(1024 * 1024):
+                    handle.write(chunk)
+        raw = target.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != wheel["sha256"]:
+            raise ValueError("Mac dependency checksum mismatch: " + target.name)
+        files[wheel["file"]] = raw
+    bundle["wheels"] = sorted(name for name in files if name.endswith(".whl"))
     runtime_name = 'vendor/' + runtime.name
     files[runtime_name] = runtime.read_bytes()
     files['MACOS_RUNTIME.sha256'] = (spec['sha256'] + '  ' + runtime_name + '\n').encode()

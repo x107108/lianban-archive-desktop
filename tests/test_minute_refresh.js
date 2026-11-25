@@ -85,6 +85,17 @@ function normalResponder(url, channel, options) {
   nextMeta = {...nextMeta, live: {...nextMeta.live, fetched_at: "10:02"}};
   await context.refreshMeta();
   assert.equal(stockLoads, 0, "provisional updates cannot alter historical competition");
+  context.state.tab = "date"; $("trade-date").value = day;
+  context.state.dateData = {date: day, time_coverage: {missing: 1}};
+  await context.refreshMeta();
+  assert.equal(dateLoads.length, 2, "missing first seals refresh even when today's confirmed pool has not changed");
+  context.state.dateData.time_coverage.missing = 0;
+  await context.refreshMeta();
+  assert.equal(dateLoads.length, 2, "complete source clocks do not force an extra page refresh");
+  context.state.dateData.time_coverage.missing = 1;
+  $("trade-date").value = previous;
+  await context.refreshMeta();
+  assert.equal(dateLoads.length, 2, "a pending date switch does not refresh the former day's missing clocks");
   context.Date = Date;
   context.dateLabel = value => value;
   load("function renderDateStatus", "function updateIndustryNavigation");

@@ -7,7 +7,7 @@ function $(id) {
   return elements.get(id);
 }
 const row = {id: "a", time: "09:40:05", code: "000001", name: "甲<测试>", boards: 2, kind: "seal", label: "首次封板", precision: "source", detail: "来源时间"};
-const peer = {...row, id: "b", code: "600001", name: "乙测试", boards: 1, time: "09:41", kind: "volume", label: "放量", volume: 120000, ratio: 4, precision: "minute"};
+const peer = {...row, id: "b", code: "600001", name: "乙测试", initials: "YCS", boards: 1, time: "09:41", kind: "volume", label: "放量", volume: 120000, ratio: 4, precision: "minute"};
 const isolated = {...row, id: "c", code: "600002", name: "孤立涨停"};
 const interaction = {id: "interaction-a", start: "09:40", end: "09:41", stock_count: 2, events: [row, peer], kinds: ["volume"], links: [{anchor_id: "a", event_id: "b", delta: 1}]};
 const data = {date: "2026-10-23", events: [row, peer, isolated], interactions: [interaction, {id: "bad-single", events: [isolated], links: [{anchor_id: "c", event_id: "c", delta: 0}]}], jobs: [], coverage: {total: 3, analyzed: 2, partial: 0, missing: 1}};
@@ -315,6 +315,18 @@ $("minute-chart").scrollIntoView = () => {};
   assert.match($("minute-timeline-locate-options").innerHTML, /乙测试/);
   assert.ok(!$("minute-timeline-locate-options").innerHTML.includes("甲&lt;测试&gt;"));
   assert.equal($("minute-timeline-list").innerHTML, timelineBeforeOptionSearch, "searching the locator never filters the chart");
+  for (const kind of ["locate", "exclude"]) {
+    const search = $(kind === "locate" ? "minute-timeline-search" : "minute-timeline-exclude");
+    for (const query of [" ycs ", "YCS", "yc"]) {
+      search.value = query;
+      context.renderMinuteTimelineStockPicker(kind);
+      const options = $("minute-timeline-" + kind + "-options").innerHTML;
+      assert.match(options, /乙测试/, `${kind} supports full or partial pinyin initials in either case`);
+      assert.doesNotMatch(options, /甲&lt;测试&gt;|丙测试/);
+      assert.equal($("minute-timeline-list").innerHTML, timelineBeforeOptionSearch, "initials search only changes picker candidates");
+    }
+    search.value = "";
+  }
   context.closeMinuteTimelineStockPickers();
   context.toggleMinuteTimelineStockPicker("locate");
   assert.equal($("minute-timeline-locate-popup").hidden, false);
@@ -424,10 +436,10 @@ $("minute-chart").scrollIntoView = () => {};
   responder = async (url, channel, options = {}) => {assert.notEqual(options.method, "POST"); return incompleteTimes;};
   await context.loadMinuteTimeline();
   context.state.meta.capabilities.edit_tags = false;
-  context.state.minuteTimelineTimesRequested = new Set();
+  context.state.minuteTimelineTimesRequested = new Map();
   await context.loadMinuteTimeline();
   context.state.meta.capabilities.edit_tags = true;
-  context.state.minuteTimelineTimesRequested = new Set();
+  context.state.minuteTimelineTimesRequested = new Map();
   let finishOldClocks;
   responder = (url, channel, options = {}) => options.method === "POST" ? new Promise(done => finishOldClocks = done) : Promise.resolve(incompleteTimes);
   const oldClocks = context.loadMinuteTimeline();

@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT))
 import database as db
 
 TABLES = ('days', 'stocks', 'events', 'stock_industries', 'company_registrations',
-          'suspension_days', 'suspension_records')
+          'suspension_days', 'suspension_records', 'verified_suspension_days')
 KEYS = {'calendar_dates', 'calendar_source', 'calendar_url', 'coverage_note', 'coverage_status',
         'extension_2020_completed_at', 'industry_count', 'industry_fetched_at', 'industry_source',
         'industry_status', 'latest_date', 'method_note', 'missing_dates', 'range_end', 'range_start',

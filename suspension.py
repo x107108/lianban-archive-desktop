@@ -110,9 +110,53 @@ class Refresher:
     def __init__(self, path):
         self.path, self._lock, self._running = path, threading.Lock(), set()
         self._stopped = False
+        self._cycle_queue = []
+        self._cycle_pending = set()
+        self._cycle_running = False
 
     def stop(self):
         self._stopped = True
+
+    @property
+    def cycles_updating(self):
+        with self._lock:
+            return bool(self._cycle_pending)
+
+    def maybe_refresh_cycles(self, code=None):
+        """Check new archive gaps and viewed stocks without blocking page queries."""
+        from suspension_history import cycle_gaps
+        with self._lock:
+            if self._stopped:
+                return False
+            if code in self._cycle_pending:
+                return True
+            with closing(db.connect(self.path)) as conn:
+                if not cycle_gaps(conn, code=code, latest_only=code is None):
+                    return False
+            self._cycle_queue.append(code)
+            self._cycle_pending.add(code)
+            if not self._cycle_running:
+                self._cycle_running = True
+                threading.Thread(target=self._run_cycles, daemon=True, name="cycle-suspensions").start()
+            return True
+
+    def _run_cycles(self):
+        from suspension_history import collect
+        while True:
+            with self._lock:
+                if self._stopped or not self._cycle_queue:
+                    self._cycle_queue.clear()
+                    self._cycle_pending.clear()
+                    self._cycle_running = False
+                    return
+                code = self._cycle_queue.pop(0)
+            try:
+                collect(self.path, code=code, latest_only=code is None, stopped=lambda: self._stopped)
+            except (ValueError, OSError) as exc:
+                print(f"历史停牌核验暂未完成：{exc}", flush=True)
+            finally:
+                with self._lock:
+                    self._cycle_pending.discard(code)
 
     def maybe_refresh(self, day):
         if not day or day > datetime.now(db.TZ).date().isoformat() or self._stopped:

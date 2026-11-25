@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from contextlib import closing
@@ -15,6 +16,7 @@ import database as db
 import app_version
 import industry
 import concept_tags
+import convertible_bonds
 import registration
 import shareholders
 import market_values
@@ -39,6 +41,38 @@ def valid_day(value):
     return value
 
 
+def query_etag(db_path, request_path):
+    """Validate browser-cached queries against the local archive, including WAL writes."""
+    route = urlparse(request_path).path
+    minute_routes = ("/api/intraday", "/api/intraday/stock", "/api/intraday/timeline", "/api/intraday/comparison")
+    archive_routes = ("/api/stock", "/api/comparison", "/api/date", "/api/blacklist", "/api/tags",
+                      "/api/tag-stocks", "/api/stock-tags", "/api/stock-note", "/api/stock-shareholders",
+                      "/api/shareholder-alerts", "/api/seven-boards", "/api/announcement", "/api/site-links")
+    if route not in archive_routes + minute_routes or str(db_path) == ":memory:":
+        return None
+    today = db.now_iso()[:10]
+    if route in minute_routes:
+        day = parse_qs(urlparse(request_path).query).get("date", [""])[0]
+        if not day or day >= today:
+            return None  # Today's minute refresh decisions depend on the clock, not just stored rows.
+    archive = Path(db_path).resolve()
+    paths = [archive]
+    if route in minute_routes + ("/api/date", "/api/seven-boards"):
+        paths.append(intraday.store_path(archive))  # Minute charts, catalogue, seal times and 777 evidence.
+    signature = []
+    for path in paths:
+        for file in (path, Path(str(path) + "-wal")):
+            try:
+                stat = file.stat()
+                signature.append((stat.st_ino, stat.st_size, stat.st_mtime_ns))
+            except FileNotFoundError:
+                signature.append(None)
+    if signature[0] is None:
+        return None
+    token = repr((str(archive), app_version.VERSION, today, request_path, signature)).encode("utf-8")
+    return 'W/"' + hashlib.sha256(token).hexdigest() + '"'
+
+
 def read_api(server, path):
     """Shared query routes for the local demo and the public WSGI service."""
     parsed = urlparse(path)
@@ -49,8 +83,12 @@ def read_api(server, path):
         return subsidiaries.stock_view(server.db_path, arg("code"), refresh=editable)
     if parsed.path == "/api/intraday":
         return intraday.overview(server.db_path, arg("date") or None, include_live=editable)
+    if parsed.path == "/api/intraday/comparison":
+        import intraday_comparison
+        return intraday_comparison.view(server.db_path, valid_day(arg("date")), include_live=editable)
     if parsed.path == "/api/intraday/stock":
-        return intraday.stock_view(server.db_path, valid_day(arg("date")), arg("code"), include_live=editable)
+        return intraday.stock_view(server.db_path, valid_day(arg("date")), arg("code"), include_live=editable,
+                                   cached_match=arg("cached_match") == "1")
     if parsed.path == "/api/seven-boards":
         return seven_boards.view(server.db_path, exclude_st=arg("exclude_st", "1") != "0",
                                  exclude_gem=arg("exclude_gem", "1") != "0", include_notes=editable)
@@ -69,6 +107,8 @@ def read_api(server, path):
             server.control_owner_refresher.maybe_refresh()
         if hasattr(server, "concept_refresher"):
             server.concept_refresher.maybe_refresh()
+        if hasattr(server, "convertible_bond_refresher"):
+            server.convertible_bond_refresher.maybe_refresh()
     with closing(db.connect(server.db_path)) as conn:
         if parsed.path == "/api/stock-market-values":
             return market_values.stock_view(conn, arg("code"), valid_day(arg("date")), refresh=editable)
@@ -102,6 +142,9 @@ def read_api(server, path):
             metadata["tag_catalog_revision"] = catalog["revision"]
             if hasattr(server, "suspension_refresher"):
                 server.suspension_refresher.maybe_refresh(metadata["latest_date"])
+                if editable:
+                    server.suspension_refresher.maybe_refresh_cycles()
+                metadata["cycle_verification_updating"] = server.suspension_refresher.cycles_updating
             return metadata
         if parsed.path == "/api/stocks":
             return db.search_stocks(conn, arg("q")[:100])
@@ -128,10 +171,15 @@ def read_api(server, path):
                 exclude_st, exclude_gem = arg("exclude_st", "0"), arg("exclude_gem", "0")
                 if exclude_st not in ("0", "1") or exclude_gem not in ("0", "1"):
                     raise ValueError("股票筛选值应为 0 或 1")
+                if editable and hasattr(server, "suspension_refresher"):
+                    server.suspension_refresher.maybe_refresh_cycles(code)
+                    server.suspension_refresher.maybe_refresh_cycles(peer)
                 return db.stock_pair_comparison(conn, code, peer, start, end, db.get_settings(conn),
                                                 exclude_st=exclude_st == "1", exclude_gem=exclude_gem == "1")
             result = db.stock_view(conn, code, start, end)
             result["range_mode"] = "archive"
+            if editable and hasattr(server, "suspension_refresher"):
+                result["cycle_verification_pending"] = server.suspension_refresher.maybe_refresh_cycles(code)
         elif parsed.path == "/api/date":
             live = live_pool.metadata(conn) if editable else {}
             day = valid_day(arg("date", max(filter(None, [live.get("date"), metadata["latest_date"]]), default=metadata["range_end"])))
@@ -155,10 +203,9 @@ def read_api(server, path):
             result = db.date_view(conn, day, minimum, arg("market", "all"), arg("q")[:100],
                                   exclude_st == "1", boards, exclude_gem=exclude_gem == "1",
                                   snapshot=live_pool.snapshot(conn, day) if editable else None)
-            if not result["provisional"]:
-                import intraday_timeline
-                result["time_coverage"] = intraday_timeline.enrich_seal_times(server.db_path, day, result["rows"])
-            if editable and day in live.get("dates", []):
+            import intraday_timeline
+            result["time_coverage"] = intraday_timeline.enrich_seal_times(server.db_path, day, result["rows"])
+            if editable and result["data_status"] != "ok" and day in live.get("dates", []):
                 result["live"] = live
                 if not result["provisional"] and result["data_status"] != "ok":
                     result["coverage_note"] = "当天盘中数据尚未取得，每分钟自动重试；空返回不代表没有涨停。"
@@ -180,25 +227,53 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
-    def reply(self, value, status=200):
+    def reply(self, value, status=200, etag=None):
         raw = json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(raw)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", "private, no-cache" if etag else "no-store")
+        if etag:
+            self.send_header("ETag", etag)
         self.end_headers()
         self.wfile.write(raw)
 
     def do_GET(self):
         parsed = urlparse(self.path)
         if not parsed.path.startswith("/api/"):
-            if parsed.path in ("/", "/index.html", "/styles.css", "/boardui-home.css", "/ui-theme.js", "/app.js", "/favicon.ico") or parsed.path in FONT_ASSETS | IMAGE_ASSETS:
+            if parsed.path in ("/", "/index.html", "/styles.css", "/boardui-home.css", "/ui-theme.js", "/app.js", "/intraday-compare.css", "/intraday-compare.js", "/favicon.ico") or parsed.path in FONT_ASSETS | IMAGE_ASSETS:
                 return super().do_GET()
             return self.reply({"error": "页面不存在"}, 404)
         try:
+            etag = query_etag(self.server.db_path, self.path)
+            if etag and etag in [value.strip() for value in self.headers.get("If-None-Match", "").split(",")]:
+                # Cache hits still schedule the same non-blocking suspension checks.
+                pending = False
+                refresher = getattr(self.server, "suspension_refresher", None)
+                if refresher and parsed.path in ("/api/date", "/api/stock", "/api/comparison"):
+                    args = parse_qs(parsed.query)
+                    if parsed.path == "/api/date":
+                        refresher.maybe_refresh(args.get("date", [""])[0])
+                    else:
+                        for key in ("code", "peer") if parsed.path == "/api/comparison" else ("code",):
+                            pending = refresher.maybe_refresh_cycles(args[key][0]) or pending
+                if not pending and query_etag(self.server.db_path, self.path) == etag:
+                    self.send_response(304)
+                    self.send_header("Cache-Control", "private, no-cache")
+                    self.send_header("ETag", etag)
+                    self.end_headers()
+                    return
             result = read_api(self.server, self.path)
+            if (result is None or result.get("cycle_verification_pending") or result.get("provisional")
+                    or result.get("status") in ("error", "failed", "updating")
+                    or result.get("needs_collection") or result.get("needs_refresh")
+                    or parsed.path == "/api/date" and result.get("data_status") != "ok"
+                    or parsed.path == "/api/intraday/stock" and result.get("status") != "ok"
+                    or parsed.path == "/api/intraday/timeline" and (result.get("jobs") or result.get("time_coverage", {}).get("missing"))
+                    or parsed.path == "/api/stock-shareholders" and result.get("date_status") != "confirmed"):
+                etag = None
             return self.reply(result if result is not None else {"error": "接口不存在"},
-                              200 if result is not None else 404)
+                              200 if result is not None else 404, etag=etag)
         except (ValueError, OverflowError) as exc:
             return self.reply({"error": str(exc)}, 400)
         except Exception:
@@ -209,11 +284,11 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/stock-tags", "/api/blacklist", "/api/stock-note", "/api/tag-rename", "/api/tag-stocks", "/api/tag-delete", "/api/tag-node", "/api/intraday/collect", "/api/intraday/timeline/times", "/api/intraday/broken-pool"):
+        if path not in ("/api/stock-tags", "/api/blacklist", "/api/stock-note", "/api/tag-rename", "/api/tag-stocks", "/api/tag-delete", "/api/tag-node", "/api/intraday/collect", "/api/intraday/comparison/collect", "/api/intraday/timeline/times", "/api/intraday/broken-pool"):
             return self.reply({"error": "接口不存在"}, 404)
         if getattr(self.server, "read_only", False):
             return self.reply({"error": "公开版本仅供查询"}, 403)
-        subject = "分时" if path in ("/api/intraday/collect", "/api/intraday/timeline/times", "/api/intraday/broken-pool") else "黑名单" if path == "/api/blacklist" else "备注" if path == "/api/stock-note" else "标签"
+        subject = "分时" if path.startswith("/api/intraday/") else "黑名单" if path == "/api/blacklist" else "备注" if path == "/api/stock-note" else "标签"
         if self.headers.get("Content-Type", "").split(";", 1)[0].strip() != "application/json":
             return self.reply({"error": f"请使用 JSON 提交{subject}"}, 415)
         try:
@@ -226,6 +301,9 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/intraday/collect":
                 import intraday_sources
                 return self.reply(intraday_sources.collect_requested(self.server.db_path, valid_day(data.get("date", "")), data.get("code", ""), force=data.get("force") is True))
+            if path == "/api/intraday/comparison/collect":
+                import intraday_comparison
+                return self.reply(intraday_comparison.collect(self.server.db_path, valid_day(data.get("date", "")), data.get("code", "")))
             if path == "/api/intraday/broken-pool":
                 import intraday_sources
                 return self.reply(intraday_sources.collect_broken_pool(self.server.db_path, valid_day(data.get("date", ""))))
@@ -280,6 +358,7 @@ def main():
     server.db_path = args.db
     server.industry_refresher = industry.Refresher(args.db)
     server.concept_refresher = concept_tags.Refresher(args.db)
+    server.convertible_bond_refresher = industry.Refresher(args.db, prefix="convertible_bond", refresh_callback=convertible_bonds.refresh)
     server.shareholder_refresher = shareholders.Refresher(args.db)
     server.control_owner_refresher = control_owners.Refresher(args.db)
     server.registration_refresher = registration.Refresher(args.db)
@@ -292,8 +371,10 @@ def main():
         server.shareholder_refresher.maybe_refresh()
         server.control_owner_refresher.maybe_refresh()
         server.concept_refresher.maybe_refresh()
+        server.convertible_bond_refresher.maybe_refresh()
         with closing(db.connect(args.db)) as conn:
             server.suspension_refresher.maybe_refresh(db.meta(conn)["latest_date"])
+        server.suspension_refresher.maybe_refresh_cycles()
     after_archive_update()
     last_seven_refresh = float("-inf")
 

@@ -11,6 +11,8 @@ import database as db
 import intraday
 from intraday_sources import BROKEN_POOL_SOURCE, fetch_broken_pool, fetch_json, tencent_reference
 from provider import ProviderError
+from relationships import observed_runs
+from suspension_history import baostock_session
 
 
 def archive_runs(archive, cache, *, since=None):
@@ -19,7 +21,7 @@ def archive_runs(archive, cache, *, since=None):
     calendar = sorted(confirmed | set(settings.get("calendar_dates") or []))
     index = {day: i for i, day in enumerate(calendar)}
     suspensions = {(row["date"], row["code"]) for row in archive.execute(
-        "SELECT date,code FROM suspension_records WHERE full_day=1")}
+        "SELECT date,code FROM suspension_records WHERE full_day=1 UNION SELECT date,code FROM verified_suspension_days")}
     if cache and cache.execute("SELECT 1 FROM sqlite_master WHERE name='seven_halts'").fetchone():
         suspensions.update(tuple(row) for row in cache.execute("SELECT date,code FROM seven_halts"))
     start = settings.get("range_start") or ""
@@ -32,8 +34,16 @@ def archive_runs(archive, cache, *, since=None):
                 broken_days[day] = ({row["code"]: row for row in json.loads(rows)}, source)
 
     columns = "e.date,e.code,e.name,e.market,e.industry,e.boards,e.close,e.pct_change,e.first_time,e.open_times"
-    seeds = archive.execute(f"SELECT {columns} FROM events e JOIN days d ON d.date=e.date AND d.status='ok' "
-                            "WHERE e.boards IN (6,7) ORDER BY e.date DESC,e.code")
+    rows = [dict(row) for row in archive.execute(f"SELECT {columns} FROM events e "
+            "JOIN days d ON d.date=e.date AND d.status='ok' ORDER BY e.code,e.date")]
+    by_code = {}
+    for day, code in suspensions:
+        by_code.setdefault(code, set()).add(day)
+    coverage = {row["date"]: row["status"] for row in archive.execute("SELECT date,status FROM days")}
+    heights = {(run["code"], row["date"]): row["boards"]
+               for run in observed_runs(rows, calendar, coverage, by_code) for row in run["dates"]}
+    events = {(row["code"], row["date"]): {**row, "boards": heights[row["code"], row["date"]]} for row in rows}
+    seeds = [row for row in events.values() if row["boards"] in (6, 7)]
     seventh, unchecked = [], set()
     for row in seeds:
         if row["boards"] == 7:
@@ -41,6 +51,8 @@ def archive_runs(archive, cache, *, since=None):
                 seventh.append((dict(row), "resealed" if row["open_times"] else "sealed"))
             continue
         next_index = index[row["date"]] + 1
+        while next_index < len(calendar) and (calendar[next_index], row["code"]) in suspensions:
+            next_index += 1
         if next_index == len(calendar):
             continue
         day = calendar[next_index]
@@ -57,13 +69,15 @@ def archive_runs(archive, cache, *, since=None):
     seventh.sort(key=lambda item: item[0]["code"])
     for final, outcome in sorted(seventh, key=lambda item: item[0]["date"], reverse=True):
         board_days = [None] * 6 + [final]
+        i = index[final["date"]]
         for offset in range(1, 7):
-            i = index[final["date"]] - offset
+            i -= 1
+            while i >= 0 and (calendar[i], final["code"]) in suspensions:
+                i -= 1
             if i < 0 or calendar[i] not in confirmed:
                 break
-            row = archive.execute(f"SELECT {columns} FROM events e WHERE date=? AND code=? AND boards=?",
-                                  (calendar[i], final["code"], 7 - offset)).fetchone()
-            if row is None:
+            row = events.get((final["code"], calendar[i]))
+            if row is None or row["boards"] != 7 - offset:
                 break
             board_days[6 - offset] = dict(row)
         if outcome != "broken":
@@ -72,8 +86,7 @@ def archive_runs(archive, cache, *, since=None):
                     break
                 if (day, final["code"]) in suspensions:
                     continue
-                row = archive.execute(f"SELECT {columns} FROM events e WHERE date=? AND code=?",
-                                      (day, final["code"])).fetchone()
+                row = events.get((final["code"], day))
                 if row and row["boards"] == len(board_days) + 1:
                     board_days.append(dict(row))
                     continue
@@ -114,6 +127,8 @@ def view(archive_path, *, exclude_st=True, exclude_gem=True, include_notes=True)
         db.enrich_industries(archive, runs)
         board_types = [dict.fromkeys(("one_price", "t_shape", "intraday", "broken", "unknown", "opened"), 0) for _ in range(7)]
         tables = {r[0] for r in cache.execute("SELECT name FROM sqlite_master WHERE type='table'")} if cache else set()
+        openings = {row[:2]: row[2:] for row in cache.execute(
+            "SELECT date,code,open_price,previous_close,close,source FROM seven_openings")} if "seven_openings" in tables else {}
         for run in runs:
             if run["outcome"] != "broken":
                 yearly_sealed[run["date"][:4]].add(run["code"])
@@ -135,6 +150,12 @@ def view(archive_path, *, exclude_st=True, exclude_gem=True, include_notes=True)
                     interval = history[2]
                     day.update(previous_close=history[0], points=json.loads(history[1]), status="ok", interval=interval,
                                minute_source="公开 1 分钟行情" if interval == 1 else "BaoStock 5 分钟行情")
+                opening = openings.get(key)
+                if (opening and day.get("points") and day["points"][0][0] > 0
+                        and abs(opening[1] - day["previous_close"]) <= max(0.02, opening[1] * 0.0005)
+                        and day["points"][-1][0] == 240
+                        and abs(opening[2] - day["points"][-1][1]) <= max(0.02, opening[2] * 0.0005)):
+                    day.update(open_price=opening[0], opening_source=opening[3])
                 if day.get("terminal") == "unsealed" and day.get("status") == "ok":
                     day["pct_change"] = round((day["points"][-1][1] / day["previous_close"] - 1) * 100, 2)
             if not include_notes:
@@ -153,13 +174,92 @@ def checked_prices(day, points, interval, *, reference=None):
     return day["date"], day["code"], previous, json.dumps(points, separators=(",", ":")), interval
 
 
-def five_minute_prices(days, cache):
-    import baostock
+def opening_record(day, opening, previous, close, source):
+    opening = intraday.number(opening, positive=True)
+    previous = intraday.number(previous, positive=True)
+    close = intraday.number(close, positive=True)
+    if (abs(close - day["points"][-1][1]) > max(0.02, close * 0.0005)
+            or abs(previous - day["previous_close"]) > max(0.02, previous * 0.0005)):
+        return None
+    return day["date"], day["code"], opening, previous, close, source, db.now_iso()
 
-    login = baostock.login()
-    if login.error_code != "0":
-        raise ValueError(login.error_msg)
-    try:
+
+def checked_openings(series, days):
+    if series.code != days[0]["code"] or series.period_name != "day" or series.adjust_mode != "none":
+        raise ValueError("开盘行情代码、周期或复权口径不一致")
+    bars = {bar.time.date().isoformat(): bar for bar in series.bars}
+    rows = []
+    for day in days:
+        bar = bars.get(day["date"])
+        if bar is None or bar.volume_wire_value <= 0 or bar.last_close_price_milli is None:
+            continue
+        if bar.low <= bar.open <= bar.high:
+            row = opening_record(day, bar.open, bar.last_close_price_milli / 1000, bar.close, "通达信不复权日行情")
+            if row:
+                rows.append(row)
+    return rows
+
+
+def baostock_openings(grouped):
+    with baostock_session() as baostock:
+        for code, days in grouped.items():
+            symbol = ("sh." if code.startswith("6") else "sz.") + code
+            wanted = {day["date"]: day for day in days}
+            result = baostock.query_history_k_data_plus(symbol, "date,code,open,high,low,close,preclose,tradestatus",
+                        start_date=min(wanted), end_date=max(wanted), frequency="d", adjustflag="3")
+            if result.error_code != "0":
+                print(f"777 开盘价 {code}: {result.error_msg}", flush=True)
+                continue
+            for values in result.data:
+                trade_date, row_symbol, opening, high, low, close, previous, traded = values
+                if trade_date not in wanted or row_symbol != symbol or traded != "1":
+                    continue
+                try:
+                    opening = intraday.number(opening, positive=True)
+                    if not float(low) <= opening <= float(high):
+                        raise ValueError("开盘价超出当日价格范围")
+                    row = opening_record(wanted[trade_date], opening, previous, close, "BaoStock 不复权日行情")
+                    if row:
+                        yield [row]
+                except (ValueError, TypeError) as exc:
+                    print(f"777 开盘价 {trade_date} {code}: {exc}", flush=True)
+
+
+def collect_openings(archive_path, *, recent=False, five_minute=False):
+    """Keep the independently dated opening price without altering cached minute samples."""
+
+    since = (datetime.now(db.TZ).date() - timedelta(days=14)).isoformat() if recent else ""
+    data = view(archive_path, exclude_st=False, exclude_gem=False, include_notes=False)
+    with closing(db.connect(archive_path)) as archive:
+        calendar = sorted(set(db.get_settings(archive).get("calendar_dates") or []) |
+                          {row[0] for row in archive.execute("SELECT date FROM days WHERE status='ok'")})
+    indices = {day: i for i, day in enumerate(calendar)}
+    pending = {(day["date"], run["code"]): day for run in data["rows"] for day in run["days"]
+               if day and day["date"] >= since and day.get("points") and day["points"][0][0] > 0
+               and day["points"][-1][0] == 240 and not day.get("open_price")}
+    grouped = {}
+    for day in pending.values():
+        grouped.setdefault(day["code"], []).append(day)
+    print(f"777 待补开盘价 {len(pending)} 个股票日", flush=True)
+    if not pending:
+        return
+
+    def save(rows):
+        saved = 0
+        with closing(intraday.connect(intraday.store_path(archive_path))) as cache:
+            for batch in rows:
+                with cache:
+                    cache.executemany("INSERT INTO seven_openings VALUES (?,?,?,?,?,?,?) ON CONFLICT(date,code) DO UPDATE SET "
+                                      "open_price=excluded.open_price,previous_close=excluded.previous_close,close=excluded.close,"
+                                      "source=excluded.source,fetched_at=excluded.fetched_at", batch)
+                saved += len(batch)
+        print(f"777 开盘价已补 {saved}/{len(pending)}", flush=True)
+
+    save(baostock_openings(grouped))
+
+
+def five_minute_prices(days, cache):
+    with baostock_session() as baostock:
         for day in days:
             code, trade_date = day["code"], day["date"]
             symbol = ("sh." if code.startswith("6") else "sz.") + code
@@ -202,8 +302,6 @@ def five_minute_prices(days, cache):
                 yield checked_prices(day, points, 5, reference=reference)
             except (ValueError, TypeError) as exc:
                 print(f"777 5分钟 {trade_date} {code}: {exc}", flush=True)
-    finally:
-        baostock.logout()
 
 
 def collect(archive_path, *, recent=False, five_minute=False):
@@ -230,6 +328,7 @@ def collect(archive_path, *, recent=False, five_minute=False):
                    and (day["date"], day["code"]) not in ready}
         print(f"777 周期 {len(runs)}，待核对破板日期 {len(unchecked)}，待补分时 {len(pending)}", flush=True)
         if not pending:
+            collect_openings(archive_path, recent=recent, five_minute=five_minute)
             return
 
         def save(rows):
@@ -242,6 +341,7 @@ def collect(archive_path, *, recent=False, five_minute=False):
                                       "WHERE excluded.interval < seven_minutes.interval", row)
                     saved += 1
             print(f"777 分时已补 {saved}/{len(pending)}", flush=True)
+            collect_openings(archive_path, recent=recent, five_minute=five_minute)
 
         if five_minute:
             save(five_minute_prices(pending.values(), cache))
@@ -275,6 +375,10 @@ def collect(archive_path, *, recent=False, five_minute=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="补采 777 模块所需的公开历史分时")
     parser.add_argument("--db", type=Path, default=db.DEFAULT_DB)
-    parser.add_argument("--five-minute", action="store_true", help="使用单独安装的 BaoStock 补齐 5 分钟历史行情")
+    parser.add_argument("--five-minute", action="store_true", help="用 BaoStock 的 5 分钟行情补齐缺图")
+    parser.add_argument("--openings", action="store_true", help="核对并补齐历史开盘价")
     args = parser.parse_args()
-    collect(args.db, five_minute=args.five_minute)
+    if args.openings:
+        collect_openings(args.db, five_minute=args.five_minute)
+    else:
+        collect(args.db, five_minute=args.five_minute)

@@ -214,6 +214,62 @@ class ArchiveTests(unittest.TestCase):
         self.assertTrue(result["cycles"][0]["clipped"])
         self.assertFalse(result["cycles"][1]["end_known"])
 
+    def test_cycle_skips_verified_full_suspensions_even_when_source_restarts_boards(self):
+        days = ["2025-05-26", "2025-05-27", "2025-05-28", "2025-05-29", "2025-05-30",
+                "2025-06-03", "2025-06-04", "2025-06-05", "2025-06-06", "2025-06-09", "2025-06-10"]
+        db.set_settings(self.conn, calendar_dates=days)
+        observations = {days[0]: 1, days[1]: 2, days[7]: 1, days[8]: 2, days[9]: 3}
+        for day in days:
+            self.save(day, [event(boards=observations[day])] if day in observations else [])
+        halted = days[2:7]
+        for day in halted:
+            db.save_suspensions(self.conn, day, [{"code": "000001", "name": "测试甲",
+                "start": "2025-05-28T09:30:00", "end": "2025-06-04T15:00:00",
+                "resume": "2025-06-05", "reason": "synthetic", "full_day": True}], "synthetic", [])
+        before = [tuple(r) for r in self.conn.execute("SELECT * FROM events ORDER BY date,code")]
+        result = db.stock_view(self.conn, "000001", days[0], days[-1])
+        self.assertEqual(result["stats"], {"limit_days": 5, "max_boards": 5, "cycles": 1})
+        cycle = result["cycles"][0]
+        self.assertEqual((cycle["start"], cycle["end"], cycle["boards"]), (days[0], days[9], 5))
+        self.assertEqual(cycle["dates"], list(observations))
+        self.assertEqual(cycle["suspension_dates"], halted)
+        self.assertTrue(cycle["start_known"])
+        self.assertTrue(cycle["end_known"])
+        self.assertFalse(cycle["ongoing"])
+        self.assertIn("停牌", cycle["note"])
+        self.assertEqual(before, [tuple(r) for r in self.conn.execute("SELECT * FROM events ORDER BY date,code")])
+        cutoff = db.stock_view(self.conn, "000001", days[0], days[6])
+        self.assertEqual(cutoff["cycles"][0]["boards"], 2)
+        self.assertTrue(cutoff["cycles"][0]["ongoing"])
+        self.assertFalse(cutoff["cycles"][0]["end_known"])
+        self.assertEqual(cutoff["as_of_date"], days[6])
+
+    def test_partial_or_uncovered_trading_days_cannot_bridge_cycles(self):
+        days = ["2025-10-14", "2025-10-15", "2025-10-16", "2025-10-17"]
+        db.set_settings(self.conn, calendar_dates=days)
+        for day in days:
+            self.save(day, [event()] if day in (days[0], days[-1]) else [])
+        record = {"code": "000001", "name": "测试甲", "start": days[1] + "T09:30:00",
+                  "end": days[2] + "T15:00:00", "resume": days[-1], "reason": "synthetic", "full_day": True}
+        db.save_suspensions(self.conn, days[1], [record], "synthetic", [])
+        result = db.stock_view(self.conn, "000001", days[0], days[-1])
+        self.assertEqual(len(result["cycles"]), 2, "the uncovered non-limit trading day still breaks the cycle")
+        db.save_suspensions(self.conn, days[2], [{**record, "full_day": False}], "synthetic", [])
+        self.assertEqual(len(db.stock_view(self.conn, "000001", days[0], days[-1])["cycles"]), 2)
+        db.save_suspensions(self.conn, days[2], [record], "synthetic", [])
+        self.assertEqual(len(db.stock_view(self.conn, "000001", days[0], days[-1])["cycles"]), 1)
+
+    def test_monotone_source_boards_continue_across_a_full_suspension(self):
+        days = ["2025-10-14", "2025-10-15", "2025-10-16"]
+        db.set_settings(self.conn, calendar_dates=days)
+        for day, rows in zip(days, [[event()], [], [event(boards=2)]]):
+            self.save(day, rows)
+        db.save_suspensions(self.conn, days[1], [{"code": "000001", "name": "测试甲",
+            "start": days[1] + "T09:30:00", "end": days[1] + "T15:00:00",
+            "resume": days[2], "reason": "synthetic", "full_day": True}], "synthetic", [])
+        result = db.stock_view(self.conn, "000001", days[0], days[-1])
+        self.assertEqual(result["stats"], {"limit_days": 2, "max_boards": 2, "cycles": 1})
+
     def test_confirmed_nonlimit_day_separates_distinct_cycles(self):
         self.save("2025-10-14", [event(boards=1)])
         self.save("2025-10-15", [])
@@ -273,6 +329,7 @@ class ArchiveTests(unittest.TestCase):
     def request(self, path):
         handler = object.__new__(app.Handler)
         handler.path = path
+        handler.headers = {}
         handler.server = SimpleNamespace(db_path=":memory:")
         handler.wfile = io.BytesIO()
         response = {"headers": {}}

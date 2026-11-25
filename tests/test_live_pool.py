@@ -114,6 +114,7 @@ class LivePoolTests(unittest.TestCase):
             self.assertEqual(db.meta(conn)["coverage"]["records"], 2)
         view = app.read_api(SimpleNamespace(db_path=self.path), "/api/date?date=" + self.day)
         self.assertFalse(view["provisional"])
+        self.assertNotIn("live", view, "a confirmed close no longer reports a provisional pool waiting for updates")
         self.assertEqual(view["rows"][0]["boards"], 3)
 
     def run_refresh(self, result=None, *, dates=None, error=None):

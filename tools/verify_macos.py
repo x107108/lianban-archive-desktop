@@ -18,6 +18,8 @@ def run(action, *args):
 
 run('install')
 run('verify')
+subprocess.run([str(root / '.runtime/macos/python/bin/python3'), '-c',
+                'import baostock, pandas, numpy; print("Native collection dependencies: OK")'], check=True)
 with socket.socket() as occupied:
     occupied.bind(('127.0.0.1', 0))
     occupied.listen()

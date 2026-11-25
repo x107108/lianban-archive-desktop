@@ -46,6 +46,10 @@ const regressionSelected=context.renderIndustryColumns(regressionRows.filter(row
 assert.equal(occurrences(regressionSelected,"003029"),1);
 assert.equal(occurrences(regressionSelected,"600668"),2);
 const blocked=context.renderStockCard({...regressionRows[4],blacklisted:true});
+const bondCard=context.renderStockCard({...regressionRows[4],blacklisted:true,has_convertible_bond:true});
+assert.ok(bondCard.includes('<span class="stock-blacklist-badge stock-bond-badge" aria-label="可转债正股" title="可转债正股">债</span>'),"bond status uses the existing passive blacklist badge styling");
+assert.ok(bondCard.indexOf('data-shareholder-code=') < bondCard.indexOf('stock-bond-badge') && bondCard.indexOf('stock-bond-badge') < bondCard.indexOf('>黑名单</span>'),"bond badge sits after shareholders and before blacklist");
+assert.ok(!blocked.includes('stock-bond-badge') && !context.renderStockCard({...regressionRows[4],has_convertible_bond:false}).includes('stock-bond-badge'),"non-bond and unknown stocks do not receive the badge");
 assert.ok(blocked.includes("blacklisted-stock") && blocked.includes('class="stock-blacklist-badge">黑名单'));
 assert.ok(!context.renderStockCard(regressionRows[4]).includes("blacklisted-stock"));
 context.state.latestLimitUps=new Map([["600802",1]]);

@@ -67,6 +67,11 @@ def connect(path):
         CREATE TABLE IF NOT EXISTS seven_halts (
             date TEXT NOT NULL, code TEXT NOT NULL, PRIMARY KEY(date,code)
         );
+        CREATE TABLE IF NOT EXISTS seven_openings (
+            date TEXT NOT NULL, code TEXT NOT NULL, open_price REAL NOT NULL,
+            previous_close REAL NOT NULL, close REAL NOT NULL, source TEXT NOT NULL,
+            fetched_at TEXT NOT NULL, PRIMARY KEY(date,code)
+        );
     """)
     return conn
 
@@ -332,12 +337,20 @@ def overview(archive_path, day=None, *, include_live=False):
             "pool_status": "provisional" if snapshot else pool["status"] if pool else "missing", "pool_source": snapshot["source"] if snapshot else pool["source"] if pool else None}
 
 
-def stock_view(archive_path, day, code, *, include_live=False):
+def stock_view(archive_path, day, code, *, include_live=False, cached_match=False):
     validate_day(day)
     if not isinstance(code, str) or not re.fullmatch(r"[0-9]{6}", code):
         raise ValueError("请输入六位股票代码")
     member = next((r for r in catalog(archive_path) if r["code"] == code), None)
-    if member and db.is_st_name(member["name"]):
+    if cached_match:
+        path = store_path(archive_path)
+        if path.is_file():
+            with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as conn:
+                if conn.execute("SELECT 1 FROM sqlite_master WHERE name='session_context'").fetchone():
+                    context = conn.execute("SELECT stock_json FROM session_context WHERE date=? AND code=?", (day, code)).fetchone()
+                    if context:
+                        member = json.loads(context[0])
+    elif member and db.is_st_name(member["name"]):
         raise ValueError("分时数据已剔除 ST、*ST 股票")
     with closing(db.connect(archive_path)) as conn:
         if day not in trading_dates(conn, include_live=include_live):
@@ -348,10 +361,10 @@ def stock_view(archive_path, day, code, *, include_live=False):
             row = next((dict(r) for r in snapshot["records"] if r["code"] == code), None)
         if row is None:
             if member:
-                row = {"date": day, "boards": 0, "industry": None, **{k: member[k] for k in ("code", "name", "market")}}
+                row = {"date": day, "boards": member.get("boards", 0), "industry": None, **{k: member[k] for k in ("code", "name", "market")}}
         if row is not None:
             row = dict(row)
-            if db.is_st_name(row["name"]):
+            if not cached_match and db.is_st_name(row["name"]):
                 raise ValueError("分时数据已剔除 ST、*ST 股票")
             db.enrich_industries(conn, [row])
             row["initials"] = db.stock_initials(row["name"])
@@ -364,6 +377,8 @@ def stock_view(archive_path, day, code, *, include_live=False):
     row["stock_type"] = "limit_up" if row["boards"] else "broken" if broken else "mainboard"
     sessions, errors = _cached(archive_path, day=day, code=code, detail=True)
     cached = sessions.get((day, code))
+    if cached_match and not cached:
+        raise ValueError("该股票在所选日期的匹配分时已不可用")
     result = {"date": day, "stock": dict(row), "status": "missing", "points": [], "note": errors.get((day, code), "该股票当日分时尚未采集")}
     if cached:
         result.update(status=cached["status"], points=json.loads(cached["points_json"]), note=cached["note"],
@@ -379,9 +394,9 @@ def stock_view(archive_path, day, code, *, include_live=False):
                 if context:
                     result["reference_basis"] = context[0]
     result["auction"] = auction_view(archive_path, day, code)
-    result["needs_collection"] = not result["points"] or result["auction"]["status"] == "unchecked"
+    result["needs_collection"] = not cached_match and (not result["points"] or result["auction"]["status"] == "unchecked")
     result["refresh_error"] = errors.get((day, code))
-    result["needs_refresh"] = include_live and live_pool.minute_refresh_due(day, result.get("refresh_checked_at"))
+    result["needs_refresh"] = not cached_match and include_live and live_pool.minute_refresh_due(day, result.get("refresh_checked_at"))
     result["provisional"] = bool(snapshot)
     if include_live and day == datetime.now(db.TZ).date().isoformat() and live_pool.polling_time() and result["points"]:
         result["note"] = f"盘中分钟数据，当前已缓存 {len(result['points'])} 个交易分钟；尚未收盘。"

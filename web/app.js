@@ -9,6 +9,7 @@ function escapeHTML(value) { return String(value ?? "").replace(/[&<>"']/g, (cha
 function textValue(value) { return value === undefined || value === null || value === "" ? "—" : String(value); }
 function numberValue(value, digits = 0) { if (value === undefined || value === null || value === "" || !Number.isFinite(Number(value))) return "—"; return Number(value).toLocaleString("zh-CN", { minimumFractionDigits: digits, maximumFractionDigits: digits }); }
 const RECENT_STOCKS_KEY = "limit-up-archive.recent-stocks.v1";
+const RECENT_TREND_TARGETS_KEY = "limit-up-archive.recent-trend-targets.v1";
 const RELATION_HEIGHT_KEY = "limit-up-archive.relation-height.v1";
 function normalizeRelationHeight(value) {
   const height = Number(value);
@@ -32,16 +33,20 @@ function normalizeRecentStocks(items) {
     return true;
   }).slice(0, 10).map(stock => ({code: String(stock.code), name: stock.name.trim()}));
 }
-function readRecentStocks() {
-  try { return normalizeRecentStocks(JSON.parse(localStorage.getItem(RECENT_STOCKS_KEY) || "[]")); }
+function readRecentStocks(key = RECENT_STOCKS_KEY) {
+  try { return normalizeRecentStocks(JSON.parse(localStorage.getItem(key) || "[]")); }
   catch { return []; }
+}
+function rememberRecentStock(key, stock, previous = []) {
+  const recent = normalizeRecentStocks([stock, ...readRecentStocks(key), ...previous]);
+  try { localStorage.setItem(key, JSON.stringify(recent)); } catch {}
+  return recent;
 }
 function renderRecentStocks() {
   $("recent-stock-list").innerHTML = (state.recentStocks || []).map(stock => `<button type="button" class="recent-stock" data-recent-code="${escapeHTML(stock.code)}" data-recent-name="${escapeHTML(stock.name)}" title="${escapeHTML(stock.name)} ${escapeHTML(stock.code)} · 查看历史">${escapeHTML(stock.name)}</button>`).join("") || '<span class="recent-stocks-empty">暂无记录</span>';
 }
 function rememberStock(stock) {
-  state.recentStocks = normalizeRecentStocks([stock, ...readRecentStocks(), ...(state.recentStocks || [])]);
-  try { localStorage.setItem(RECENT_STOCKS_KEY, JSON.stringify(state.recentStocks)); } catch {}
+  state.recentStocks = rememberRecentStock(RECENT_STOCKS_KEY, stock, state.recentStocks);
   renderRecentStocks();
 }
 function marketValue(value) { return markets[value] || textValue(value); }
@@ -68,10 +73,30 @@ async function request(path, channel, options = {}) {
   state.requests[channel] = controller;
   const timeout = setTimeout(() => controller.abort("timeout"), 30000);
   try {
-    const response = await fetch(path, { ...options, signal: controller.signal, headers: { Accept: "application/json", ...options.headers } });
+    let cache = null, cached = null;
+    if ((!options.method || options.method === "GET") && path.startsWith("/api/") && !["/api/meta", "/api/stocks"].includes(path.split("?")[0]) && typeof caches !== "undefined") {
+      try {
+        cache = await caches.open("lianban-query-v1");
+        cached = await cache.match(path);
+      } catch { /* Storage restrictions must not prevent a normal query. */ }
+    }
+    const headers = { Accept: "application/json", ...options.headers };
+    if (cached) headers["If-None-Match"] = cached.headers.get("ETag");
+    const response = await fetch(path, { ...options, signal: controller.signal, headers, ...(cache ? {cache: "no-store"} : {}) });
+    if (response.status === 304 && cached) return await cached.json();
+    const copy = cache && response.ok && response.headers.get("ETag") ? response.clone() : null;
     const data = await response.json().catch(() => null);
     if (!response.ok) throw new Error(data?.error || data?.message || `服务器返回 ${response.status}`);
     if (!data) throw new Error("服务器未返回有效的数据。");
+    if (cache) {
+      try {
+        if (copy) {
+          await cache.put(path, copy);
+          const keys = await cache.keys();
+          if (keys.length > 12) await cache.delete(keys[0]);
+        } else await cache.delete(path);
+      } catch { /* Quota limits leave the freshly fetched result usable. */ }
+    }
     return data;
   } catch (error) {
     if (controller.signal.reason === "timeout") throw new Error("查询时间超过 30 秒，请稍后重新加载。");
@@ -94,8 +119,10 @@ function updateURL({replace = false} = {}) {
   if (queryDate) params.set("date", queryDate);
   if (state.tab === "intraday") {
     params.set("view", "intraday");
+    if (state.intradayPane === "compare") params.set("minute_tab", "compare");
     if (state.intradayCode) params.set("minute_code", state.intradayCode);
     if (state.minuteCompareCodes?.length) params.set("minute_compare", state.minuteCompareCodes.join(","));
+    if (state.minuteMatchDate === queryDate && state.intradayCode) params.set("minute_match", "1");
     if ($("minute-timeline-exclude-gem").checked === false) params.set("timeline_gem", "1");
   }
   if (state.tab === "stock" && state.selectedStock) {
@@ -166,22 +193,42 @@ function setView(view, update = true) {
   }
   $("stock-query-button").disabled = false;
   clearError();
+  if (minutes) setIntradayPane(state.intradayPane || "mainboard", false);
+  if (update) updateURL();
+}
+
+function setIntradayPane(pane, update = true) {
+  state.intradayPane = pane === "compare" ? "compare" : "mainboard";
+  const comparison = state.intradayPane === "compare";
+  $("minute-toolbar").hidden = comparison;
+  $("intraday-mainboard-panel").hidden = comparison;
+  $("intraday-comparison-panel").hidden = !comparison;
+  ["intraday-mainboard-tab", "intraday-comparison-tab"].forEach((id, index) => {
+    const active = comparison === Boolean(index);
+    $(id).setAttribute("aria-selected", String(active));
+    $(id).setAttribute("tabindex", active ? "0" : "-1");
+  });
+  $("page-title").textContent = comparison ? "走势对比" : "主板分时";
+  $("breadcrumb-page").textContent = comparison ? "走势对比" : "主板分时";
+  $("page-description").textContent = comparison ? "框选一段分时，查找同步、先后与反向变化。" : "查看沪深主板分时、成交量与竞价，对比不同股票的走势。";
+  if (comparison && typeof intradayComparisonUI !== "undefined") intradayComparisonUI.syncContext();
   if (update) updateURL();
 }
 
 function sevenChartHTML(day, limit) {
-  const changes = day.points.map(([, price]) => price / day.previous_close - 1);
+  const points = day.open_price > 0 && day.points[0][0] > 0 ? [[0, day.open_price], ...day.points] : day.points;
+  const changes = points.map(([, price]) => price / day.previous_close - 1);
   const upper = Math.max(limit, ...changes);
   const lower = Math.min(-upper, ...changes);
   const y = change => (7 + (upper - change) / (upper - lower) * 64).toFixed(2);
   let lastSlot = null;
-  const path = day.points.map(([slot], i) => {
+  const path = points.map(([slot], i) => {
     const command = lastSlot === null || slot - lastSlot > (day.interval || 1) ? "M" : "L";
     lastSlot = slot;
     return `${command}${(4 + slot / 240 * 152).toFixed(2)},${y(changes[i])}`;
   }).join(" ");
   return `<svg class="seven-chart" viewBox="0 0 160 78" role="img" aria-label="${escapeHTML(day.date)} 分时涨幅，范围 ${numberValue(lower * 100, 2)}% 至 ${numberValue(upper * 100, 2)}%">
-    <title>${escapeHTML(day.minute_source)}${day.status === "partial" ? " · 部分分钟缺失" : ""}</title>
+    <title>${escapeHTML(day.minute_source)}${day.open_price > 0 ? ` · 09:30 开盘 ${numberValue(day.open_price, 2)} 元（${escapeHTML(day.opening_source)}）` : day.points[0][0] > 0 ? " · 开盘价暂缺" : ""}${day.status === "partial" ? " · 部分分钟缺失" : ""}</title>
     <path class="seven-grid" d="M4,7H156 M4,71H156 M80,7V71"/>
     <path class="seven-reference" d="M4,${y(0)}H156"/>
     <path class="seven-price" d="${path}"/>
@@ -1024,13 +1071,14 @@ function renderMeta(meta, initial = false) {
   $("method-note").textContent += "\n\n注册省份来自东方财富公司当前资料的省份字段，仅获取和保存省份。";
   $("method-note").textContent += "\n\n个股历史、同期竞争和同日涨停统一按全部已收录数据的起止日期统计，上方查询日期仅用于当日涨停查询。同期竞争按全市场已收录股票比较前日同板数、下一交易日的晋级情况，包含 ST，主板、创业板、科创板和北交所统一比较。从首板进二板到更高板数都逐轮展示，每个晋级批次计 1 轮胜负，同一轮涉及的对手另行列出；对手名单中的数字为与该股票交手的轮次。赢过和输给的名单均为涨停池比较结果；未入池不代表已确认未涨停，胜负标记为待行情核实。缺失交易日及最新收录日之后的结果不计入胜负。同日涨停统计全市场已收录股票，不限板数，每只股票每天计 1 次，不含本票，并列出具体日期。";
   $("method-note").textContent += "\n\n交易日概览的最高连板包含停牌保留高度。停复牌资料来自东方财富，只有确认全天停牌、且停牌前一交易日有连板记录的股票才保留原高度；不会把停牌日记为涨停，也不会增加涨停家数或同日涨停次数。复牌当日起不再按停牌保留。";
-  state.metaPoll = setTimeout(refreshMeta, autoStatus === "updating" || industryStatus === "updating" || registrationStatus === "updating" || meta.suspension_updating ? 3000 : 60000);
+  state.metaPoll = setTimeout(refreshMeta, autoStatus === "updating" || industryStatus === "updating" || registrationStatus === "updating" || meta.convertible_bond_status === "updating" || meta.suspension_updating || meta.cycle_verification_updating ? 3000 : 60000);
 }
 
 async function refreshMeta() {
   try {
     const previousIndustry = state.meta?.industry_fetched_at;
     const previousConcepts = state.meta?.concept_fetched_at;
+    const previousBonds = state.meta?.convertible_bond_fetched_at;
     const previousTagAliases = state.meta?.tag_alias_revision;
     const previousTagCatalog = state.meta?.tag_catalog_revision;
     const previousRegistration = state.meta?.registration_fetched_at;
@@ -1048,16 +1096,17 @@ async function refreshMeta() {
       state.meta = meta; renderMeta(meta); updateDateNavigation();
       loadSiteLinks();
       const archiveChanged = meta.archive_updated_at !== previousRevision || meta.available_start !== previousStart || meta.available_end !== previousEnd || meta.coverage?.records !== previousRecords;
-      const profilesChanged = meta.industry_fetched_at !== previousIndustry || meta.registration_fetched_at !== previousRegistration || meta.concept_fetched_at !== previousConcepts || meta.tag_alias_revision !== previousTagAliases || meta.tag_catalog_revision !== previousTagCatalog;
+      const profilesChanged = meta.industry_fetched_at !== previousIndustry || meta.registration_fetched_at !== previousRegistration || meta.concept_fetched_at !== previousConcepts || meta.convertible_bond_fetched_at !== previousBonds || meta.tag_alias_revision !== previousTagAliases || meta.tag_catalog_revision !== previousTagCatalog;
       const latestQuery = meta.query_dates.at(-1);
       const queryDateChanged = followingLatest && latestQuery && latestQuery !== previousLatest;
       if (queryDateChanged) $("trade-date").value = latestQuery;
       updateDateNavigation();
       const liveChanged = meta.live?.fetched_at !== previousLive &&
         (meta.live?.dates?.includes($("trade-date").value) || previousLiveDate === $("trade-date").value);
-      if (state.tab === "date" && (archiveChanged || profilesChanged || liveChanged || queryDateChanged || meta.suspension_revision !== previousSuspension)) loadDate({quiet: true});
+      const missingTodayTimes = state.dateData?.date === meta.live?.today && state.dateData.date === $("trade-date").value && state.dateData.time_coverage?.missing;
+      if (state.tab === "date" && (archiveChanged || profilesChanged || liveChanged || queryDateChanged || missingTodayTimes || meta.suspension_revision !== previousSuspension)) loadDate({quiet: true});
       else if (state.tab === "date" && state.dateData) renderDateStatus(state.dateData);
-      if (state.tab === "stock" && (archiveChanged || profilesChanged)) loadStock({remember: false});
+      if (state.tab === "stock" && (archiveChanged || profilesChanged || meta.suspension_revision !== previousSuspension)) loadStock({remember: false, quiet: true});
       if (state.tab === "intraday" && profilesChanged) loadIntraday();
       else if (state.tab === "intraday" && meta.live?.enabled) refreshVisibleMinuteData();
       if (state.tab === "blacklist" && profilesChanged) loadBlacklist();
@@ -1118,9 +1167,11 @@ async function loadDate({quiet = false} = {}) {
     renderDate(data);
     if (scroll != null) { const board = $("date-table-area").querySelector(".industry-board"); if (board) board.scrollLeft = scroll; updateIndustryNavigation(); }
     if (position) window.scrollTo(position);
-    const attempted = state.dateTimesRequested ||= new Set();
-    if (data.data_status === "ok" && state.meta?.capabilities?.edit_tags === true && data.time_coverage?.missing && !data.time_coverage.cached && !attempted.has(data.date)) {
-      attempted.add(data.date);
+    const attempted = state.dateTimesRequested ||= new Map();
+    const today = data.date === state.meta?.live?.today;
+    const retryDue = today ? Date.now() - (attempted.get(data.date) || 0) >= 60000 : !data.time_coverage?.cached && !attempted.has(data.date);
+    if (["ok", "provisional"].includes(data.data_status) && state.meta?.capabilities?.edit_tags === true && data.time_coverage?.missing && retryDue) {
+      attempted.set(data.date, Date.now());
       try {
         await request("/api/intraday/timeline/times", "date-times", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({date: data.date})});
         if (state.tab === "date" && state.dateData === data && query === String(getDateQuery())) await loadDate({quiet: true});
@@ -1146,7 +1197,7 @@ function renderDate(data) {
   $("date-result-count").textContent = numberValue(rows.length);
   renderDateStatus(data);
   $("date-coverage-note").classList.toggle("warning", !rows.length || ["partial", "incomplete"].includes(state.meta?.coverage?.status));
-  
+
   $("date-table-area").setAttribute("aria-busy", "false");
   const noSelectedBoards = ["ok", "provisional"].includes(data.data_status) && Number(data.available_total) > 0 && state.boards;
   const highlightOptions = {highlightLatest: !data.provisional};
@@ -1284,14 +1335,14 @@ function renderHierarchyStockGroups(rows, roots, highlightLatest) {
       sections.push(section); cohorts.set(key, section);
     }
   }
-  return sections.sort((a, b) => b.stocks.length - a.stocks.length || compareTags(a.labels[0], b.labels[0])).map(({labels, stocks}) => {
-    stocks.sort(compareStockFirstTime);
+  sections.forEach(({stocks}) => stocks.sort(compareStockFirstTime));
+  return sections.sort((a, b) => (a.stocks[0].first_time || "99:99:99").localeCompare(b.stocks[0].first_time || "99:99:99") || compareTags(a.labels[0], b.labels[0])).map(({labels, stocks}) => {
     const name = labels.join(" / ");
     const children = labels.filter(tag => !rootKeys.has(tag.toLocaleLowerCase()));
-    const heading = children.length ? `<header>${children.map(tag => {
+    const heading = `<header>${(children.length ? children : labels).map(tag => {
       const ancestors = tagAncestors(tag).reverse().slice(roots.length > 1 ? 0 : 1);
       return `${ancestors.length ? `<small>${escapeHTML(ancestors.join(" / "))} / </small>` : ""}${industryColumnHeading([tag], canManageTags())}`;
-    }).join('<span class="matrix-label-divider" aria-hidden="true"> / </span>')}<small>${stocks.length} 只</small></header>` : "";
+    }).join('<span class="matrix-label-divider" aria-hidden="true"> / </span>')}<small>${stocks.length} 只</small></header>`;
     return `<section class="matrix-tag-subgroup" data-child-tag="${escapeHTML(name)}">${heading}<ul class="industry-stock-list">${stocks.map(row => renderStockCard(row, {highlightLatest})).join("")}</ul></section>`;
   }).join("");
 }
@@ -1434,13 +1485,17 @@ function renderShareholderIcon(stock) {
   return `<button type="button" class="shareholder-icon${active ? " has-shareholder-alert" : ""}" data-shareholder-code="${escapeHTML(stock.code)}" aria-label="查看${escapeHTML(stock.name || stock.code)}的共同股东"${active ? ' aria-description="所选交易日有未屏蔽的共同股东同涨停"' : ""} aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M21 20v-2a6 6 0 0 0-4-5"/></svg></button>`;
 }
 
-function renderStockCard(row, {highlightLatest = true} = {}) {
+function renderStockCard(row, {highlightLatest = true, detailDate = ""} = {}) {
   const location = regionLabel(row);
-  const tags = stockTags(row);
+  const tags = stockTags(row).map(tag => detailDate ? [...tagAncestors(tag).reverse(), tag].join(" / ") : tag);
   const highlighted = highlightLatest && row.date !== state.meta?.latest_date && latestLimitUp(row);
   const blacklisted = row.blacklisted === true;
   const initials = nameInitials(row);
-  return `<li class="industry-stock ${highlighted ? "latest-limit-up" : ""}${blacklisted ? " blacklisted-stock" : ""}" data-card-code="${escapeHTML(row.code)}"><div class="industry-stock-top"><button type="button" class="stock-name-button" data-stock-code="${escapeHTML(row.code)}" data-stock-name="${escapeHTML(row.name)}">${escapeHTML(textValue(row.name))}</button>${renderShareholderIcon(row)}${blacklisted ? '<span class="stock-blacklist-badge">黑名单</span>' : ""}<time class="stock-first-time"${row.first_time ? ` datetime="${escapeHTML(row.first_time)}"` : ""} title="${row.first_time ? `首次涨停时间：${escapeHTML(row.first_time)}` : "首次涨停时间暂缺"}">${escapeHTML(row.first_time || "—")}</time></div>${highlighted ? latestLimitBadge(row) : ""}<div class="industry-stock-meta"><span class="row-stock-code">${escapeHTML(row.code)}</span><span class="stock-initials" title="股票名称首字母：${escapeHTML(initials || "暂未获取")}">${escapeHTML(initials || "—")}</span><span class="stock-location">${escapeHTML(location)}</span></div>${row.suspended ? renderSuspensionNote(row) : ""}<div class="stock-tags">${tags.map(tag => `<span class="stock-tag">${escapeHTML(tag)}</span>`).join("") || '<span class="stock-tag-empty">暂无标签</span>'}${canEditTags() ? `<button type="button" class="edit-stock-tags" data-edit-stock-tags="${escapeHTML(row.code)}" aria-label="编辑${escapeHTML(row.name)}标签">编辑</button>` : ""}</div><div class="stock-note-row" data-note-code="${escapeHTML(row.code)}">${renderStockNote(row)}</div></li>`;
+  const stockName = detailDate
+    ? `<a class="stock-name-button" href="?date=${escapeHTML(detailDate)}&amp;code=${escapeHTML(row.code)}" target="_blank" rel="noopener noreferrer" title="在新标签页查看股票详情">${escapeHTML(textValue(row.name))}</a>`
+    : `<button type="button" class="stock-name-button" data-stock-code="${escapeHTML(row.code)}" data-stock-name="${escapeHTML(row.name)}">${escapeHTML(textValue(row.name))}</button>`;
+  const note = detailDate ? `<p class="cycle-day-note">${escapeHTML(row.note || "暂无备注")}</p>` : renderStockNote(row);
+  return `<li class="industry-stock ${highlighted ? "latest-limit-up" : ""}${blacklisted ? " blacklisted-stock" : ""}" data-card-code="${escapeHTML(row.code)}"><div class="industry-stock-top">${stockName}${detailDate ? "" : renderShareholderIcon(row)}${row.has_convertible_bond === true ? '<span class="stock-blacklist-badge stock-bond-badge" aria-label="可转债正股" title="可转债正股">债</span>' : ""}${blacklisted ? '<span class="stock-blacklist-badge">黑名单</span>' : ""}<time class="stock-first-time"${row.first_time ? ` datetime="${escapeHTML(row.first_time)}"` : ""} title="${row.first_time ? `首次涨停时间：${escapeHTML(row.first_time)}` : "首次涨停时间暂缺"}">${escapeHTML(row.first_time || "—")}</time></div>${highlighted ? latestLimitBadge(row) : ""}<div class="industry-stock-meta"><span class="row-stock-code">${escapeHTML(row.code)}</span><span class="stock-initials" title="股票名称首字母：${escapeHTML(initials || "暂未获取")}">${escapeHTML(initials || "—")}</span><span class="stock-location">${escapeHTML(location)}</span></div>${row.suspended ? renderSuspensionNote(row) : ""}<div class="stock-tags">${tags.map(tag => `<span class="stock-tag">${escapeHTML(tag)}</span>`).join("") || '<span class="stock-tag-empty">暂无标签</span>'}${!detailDate && canEditTags() ? `<button type="button" class="edit-stock-tags" data-edit-stock-tags="${escapeHTML(row.code)}" aria-label="编辑${escapeHTML(row.name)}标签">编辑</button>` : ""}</div><div class="stock-note-row" data-note-code="${escapeHTML(row.code)}">${note}</div></li>`;
 }
 
 function renderSuspensionNote(row) {
@@ -1565,7 +1620,12 @@ function renderIndustryColumns(rows, dailyTagBoards = null, {highlightLatest = t
       const name = labels.join(" / "), merged = labels.length > 1;
       const matching = stocks.filter(row => Number(row.boards) === height).sort(compareStockFirstTime);
       const addable = !regional && !matchingMode && name !== unknown && !untagged.has(name) && (state.meta?.capabilities?.manage_tags ?? canEditTags());
-      return `<section class="matrix-cell ${matching.length ? "" : "matrix-cell-empty"}${merged ? " matrix-cell-merged" : ""}" data-matrix-column="${index}" data-stock-count="${matching.length}" data-group-label="${escapeHTML(name)}" aria-label="${escapeHTML(name)}，${label}，${matching.length} 只股票"><header class="matrix-cell-header"><h5${merged ? ` title="股票名单相同，合并展示：${escapeHTML(name)}"` : ""}>${industryColumnHeading(labels, addable)}</h5>${!regional && !matchingMode ? stockSessionSummary(matching) : `<span>${matching.length}<small>只</small></span>`}</header>${matching.length ? (!regional && !matchingMode ? renderHierarchyStockGroups(matching, labels, highlightLatest) : `<ul class="industry-stock-list">${matching.map(row => renderStockCard(row, {highlightLatest})).join("")}</ul>`) : '<div class="matrix-empty" aria-label="本组没有这个板数的股票">—</div>'}</section>`;
+      const sortKey = JSON.stringify([height, ...labels]), flat = state.flatIndustryCells?.has(sortKey) || false;
+      const sortable = !regional && !matchingMode && matching.length && labels.some(root => tagHierarchy().parentKeys.has(root.toLocaleLowerCase()));
+      const sortLabel = flat ? "默认排序" : "按细分排序";
+      const sortButton = sortable ? `<button type="button" class="matrix-sort-toggle" data-industry-sort="${escapeHTML(sortKey)}" aria-label="${sortLabel}" title="${sortLabel}" aria-pressed="${flat}"><svg class="matrix-sort-grouped" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16m0-12h4m-4 8h4M12 5h8M12 9h8M12 15h8M12 19h8"/></svg><svg class="matrix-sort-flat" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5v14m-3-3 3 3 3-3M11 5h10M11 12h7M11 19h4"/></svg></button>` : "";
+      const content = matching.length ? (!regional && !matchingMode && !flat ? renderHierarchyStockGroups(matching, labels, highlightLatest) : `<ul class="industry-stock-list">${matching.map(row => renderStockCard(row, {highlightLatest})).join("")}</ul>`) : '<div class="matrix-empty" aria-label="本组没有这个板数的股票">—</div>';
+      return `<section class="matrix-cell ${matching.length ? "" : "matrix-cell-empty"}${merged ? " matrix-cell-merged" : ""}" data-matrix-column="${index}" data-stock-count="${matching.length}" data-group-label="${escapeHTML(name)}" aria-label="${escapeHTML(name)}，${label}，${matching.length} 只股票"><header class="matrix-cell-header"><h5${merged ? ` title="股票名单相同，合并展示：${escapeHTML(name)}"` : ""}>${industryColumnHeading(labels, addable)}</h5>${!regional && !matchingMode ? stockSessionSummary(matching) : `<span>${matching.length}<small>只</small></span>`}${sortButton}</header>${content}</section>`;
     }).join("");
     return `<section class="board-height-section" data-board-height="${height}" aria-label="${label}，${total} 只股票"><header class="board-height-heading"><h4>${label}</h4><span>${total} 只股票</span></header><div class="board-matrix-row">${cells}</div></section>`;
   }).join("");
@@ -1573,6 +1633,22 @@ function renderIndustryColumns(rows, dailyTagBoards = null, {highlightLatest = t
   const mergeHint = columns.length < ordered.length ? `<span class="multi-tag-note"> · 相同首板合并为 ${columns.length} 列</span>` : "";
   const aboveHints = regional || matchingMode ? "" : `<div class="matrix-above-hints" role="group" aria-label="上方高位股票指引" hidden>${columns.map(({labels}, index) => `<button type="button" data-above-column="${index}" hidden><span class="matrix-above-label">↑ ${escapeHTML(labels.join(" / "))}</span><span class="matrix-above-count"></span></button>`).join("")}</div>`;
   return `<div class="industry-board-summary"><span><strong>${ordered.length}</strong> 个${groupType} · <strong>${rows.length}</strong> 只股票${matchingMode ? `<span class="multi-tag-note"> · ${matchingHint}</span>` : repeated ? '<span class="multi-tag-note"> · 多标签跨列显示</span>' : ""}${mergeHint}${highlightLatest && rows[0]?.date !== state.meta?.latest_date ? latestPriorityNote(false) : ""}</span><div class="industry-board-controls"><span class="industry-scroll-hint">左右查看${groupType}</span><button type="button" class="icon-button" data-industry-scroll="-1" aria-label="查看左侧分组">←</button><button type="button" class="icon-button" data-industry-scroll="1" aria-label="查看右侧分组">→</button></div></div>${aboveHints}<div class="industry-board" role="region" aria-label="按${groupType}分列、按连板高度分行的股票" tabindex="0"><div class="board-comparison" style="--matrix-columns:${columns.length}">${sections}</div></div>`;
+}
+
+function toggleIndustryCellSort(button) {
+  const key = button.dataset.industrySort, [, ...roots] = JSON.parse(key);
+  const cell = button.closest(".matrix-cell"), flatCells = state.flatIndustryCells ||= new Set();
+  const codes = new Set([...cell.querySelectorAll("[data-card-code]")].map(card => card.dataset.cardCode));
+  const rows = state.dateData.rows.filter(row => codes.has(row.code)).sort(compareStockFirstTime);
+  const flat = !flatCells.has(key), highlightLatest = !state.dateData.provisional;
+  if (flat) flatCells.add(key); else flatCells.delete(key);
+  const content = flat ? `<ul class="industry-stock-list">${rows.map(row => renderStockCard(row, {highlightLatest})).join("")}</ul>` : renderHierarchyStockGroups(rows, roots, highlightLatest);
+  cell.querySelectorAll(":scope > .industry-stock-list, :scope > .matrix-tag-subgroup").forEach(node => node.remove());
+  cell.querySelector(".matrix-cell-header").insertAdjacentHTML("afterend", content);
+  button.title = flat ? "默认排序" : "按细分排序";
+  button.setAttribute("aria-label", button.title);
+  button.setAttribute("aria-pressed", String(flat));
+  updateIndustryNavigation();
 }
 
 function renderTagEditor() {
@@ -1731,6 +1807,7 @@ function updateTagEditorControls() {
 
 function syncTagBlacklistMembership(code, blacklisted, data) {
   state.blacklistData = data;
+  if (typeof intradayComparisonUI !== "undefined") intradayComparisonUI.updateStockProfile(code, {blacklisted});
   for (const row of [...(state.dateData?.rows || []), ...(state.dateData?.suspended_rows || [])]) {
     if (row.code === code) row.blacklisted = blacklisted;
   }
@@ -1836,6 +1913,7 @@ async function saveTagEditor() {
     renderTagEditor();
     updateTagEditorControls();
     await refreshTagOrder();
+    if (typeof intradayComparisonUI !== "undefined") intradayComparisonUI.updateStockProfile(data.code, {tags: data.tags});
     if (state.tab === "stock") await loadStock({remember:false, quiet:true});
     else if (state.tab === "intraday") await loadIntraday();
     else if (state.tab === "seven") await loadSeven();
@@ -2092,7 +2170,7 @@ function renderShareholderTooltip(data, limit = 50) {
       <div class="shareholder-own-columns"><span>股东</span><span>持股数（股）</span><span>${ratioLabels[scope]}</span></div>
       <ul>${names.map(holder => `<li><div class="shareholder-own-identity"><span>${escapeHTML(holder.name)}</span><small>${escapeHTML(holder.type)}</small></div>
         <strong class="shareholder-own-quantity">${holder.holding_shares == null ? "未披露" : holder.holding_shares.toLocaleString("zh-CN")}</strong>
-        <strong class="shareholder-own-ratio">${ratioText(holder.holding_ratio)}</strong></li>`).join("")}</ul>` : `<p class="shareholder-list-empty">${empty}</p>`}</section>`;
+        <strong class="shareholder-own-ratio${holder.holding_ratio >= 5 ? " shareholder-own-ratio-highlight" : ""}">${ratioText(holder.holding_ratio)}</strong></li>`).join("")}</ul>` : `<p class="shareholder-list-empty">${empty}</p>`}</section>`;
   }
   let subsidiaries = "";
   if (tab === "subsidiaries") {
@@ -2347,6 +2425,7 @@ function applyStockNoteEditorUpdate(data, entryId, keepInputs = false) {
   document.querySelectorAll(`[data-note-code="${data.code}"]`).forEach(element => {
     element.innerHTML = renderStockNote({code: data.code, name: data.name, note: data.content});
   });
+  if (typeof intradayComparisonUI !== "undefined") intradayComparisonUI.updateStockProfile(data.code, {note: data.content});
   state.noteEditorData = data;
   if (keepInputs) captureStockNoteDrafts();
   else { state.noteDrafts.delete(entryId); renderStockNoteHistory(); }
@@ -2604,7 +2683,7 @@ async function loadStock({remember = true, quiet = false} = {}) {
     $("competition-results").innerHTML = loadingHTML();
     setStats("stock-stats");
   }
-  
+
   $("stock-query-button").disabled = true;
   updateURL();
   try {
@@ -2651,10 +2730,13 @@ function renderStock(data) {
   setStats("stock-stats", data.stats || {});
   if (state.relationExcludeLatest) loadRelationHistory();
   else renderRelationships(data.relationships);
-  
+
   $("stock-chart").innerHTML = rows.length ? renderChart(rows) : '<div class="empty-inline">暂无已收录的涨停轨迹</div>';
   $("cycle-competition-scope").textContent = data.relationships?.competition?.scope_note || "";
   $("stock-cycles").innerHTML = renderStockCycles(data);
+  if (data.cycle_verification_pending) {
+    clearTimeout(state.metaPoll); state.metaPoll = setTimeout(refreshMeta, 3000);
+  }
   updateURL();
 }
 
@@ -2769,14 +2851,54 @@ function renderCompetitionRounds(data) {
 function renderStockCycles(data) {
   const cycles = data.cycles || [];
   const rounds = data.relationships?.competition?.rounds || [];
-  return cycles.length ? cycles.map(cycle => {
+  const pending = data.cycle_verification_pending ? '<div class="empty-inline" role="status">正在核验历史停牌资料，完成后自动更新周期…</div>' : "";
+  return pending + (cycles.length ? cycles.map(cycle => {
     const uncertain = cycle.clipped || cycle.start_known === false;
     const status = uncertain ? "周期边界待确认" : cycle.ongoing ? `截至 ${dateLabel(data.as_of_date || data.range_end)} 仍在连板` : cycle.end_known === true ? "已结束" : "后续状态待确认";
     const count = Math.min(24, (cycle.dates || []).length || Number(cycle.boards) || 1);
     const dates = new Set(cycle.dates || []);
     const cycleRounds = rounds.filter(round => dates.size ? dates.has(round.date) : round.date >= cycle.start && round.date <= cycle.end);
-    return `<article class="cycle-card cycle-with-rounds" data-cycle-start="${escapeHTML(cycle.start)}"><div class="cycle-summary"><div class="cycle-head"><strong>${numberValue(cycle.boards)}<small>板</small></strong><span class="cycle-status ${cycle.ongoing ? "ongoing" : ""}" title="${escapeHTML(status)}">${escapeHTML(status)}</span></div><div class="cycle-date">${escapeHTML(dateLabel(cycle.start))}<span>→</span>${escapeHTML(dateLabel(cycle.end))}</div><p class="cycle-height-label">周期内已收录的最高高度</p><div class="cycle-steps" aria-hidden="true">${Array.from({ length: count }, (_, index) => `<span class="cycle-step" style="height:${Math.min(28, 7 + index * (20 / count))}px"></span>`).join("")}</div>${cycle.note ? `<p class="cycle-note">${escapeHTML(cycle.note)}</p>` : ""}</div>${renderCompetitionRounds({rounds: cycleRounds}) || '<p class="cycle-rounds-empty">该周期暂无已收录的竞争记录。</p>'}</article>`;
-  }).join("") : emptyHTML("暂无连板周期", "已收录数据中没有这只股票的涨停周期。");
+    return `<article class="cycle-card cycle-with-rounds" data-cycle-start="${escapeHTML(cycle.start)}"><div class="cycle-summary"><div class="cycle-head"><strong>${numberValue(cycle.boards)}<small>板</small></strong><span class="cycle-status ${cycle.ongoing ? "ongoing" : ""}" title="${escapeHTML(status)}">${escapeHTML(status)}</span></div><div class="cycle-date">${escapeHTML(dateLabel(cycle.start))}<span>→</span>${escapeHTML(dateLabel(cycle.end))}</div><button type="button" class="button secondary cycle-day-button" data-cycle-day="${escapeHTML(cycle.start)}" data-cycle-start-known="${cycle.start_known === false ? "0" : "1"}"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>当天梯队数据</button><p class="cycle-height-label">周期内已收录的最高高度</p><div class="cycle-steps" aria-hidden="true">${Array.from({ length: count }, (_, index) => `<span class="cycle-step" style="height:${Math.min(28, 7 + index * (20 / count))}px"></span>`).join("")}</div>${cycle.note ? `<p class="cycle-note">${escapeHTML(cycle.note)}</p>` : ""}</div>${renderCompetitionRounds({rounds: cycleRounds}) || '<p class="cycle-rounds-empty">该周期暂无已收录的竞争记录。</p>'}</article>`;
+  }).join("") : emptyHTML("暂无连板周期", "已收录数据中没有这只股票的涨停周期。"));
+}
+
+function openCycleDayDialog(day, startKnown = true) {
+  $("cycle-day-date").value = day;
+  $("cycle-day-context").textContent = `${state.selectedStock?.name || ""} · ${startKnown ? "默认首板日" : "首板日期未完整收录，默认首个已收录日"}：${dateLabel(day)}`;
+  $("cycle-day-dialog").showModal();
+  return loadCycleDay();
+}
+
+async function loadCycleDay() {
+  const dialog = $("cycle-day-dialog"), input = $("cycle-day-date"), day = input.value;
+  if (!day || !input.reportValidity()) return;
+  const dates = state.meta?.query_dates || state.meta?.dates || [];
+  $("cycle-day-prev").disabled = !dates.some(date => date < day);
+  $("cycle-day-next").disabled = !dates.some(date => date > day);
+  $("cycle-day-status").textContent = `${dateLabel(day)} · 正在读取当天梯队…`;
+  $("cycle-day-results").innerHTML = loadingHTML();
+  $("cycle-day-results").setAttribute("aria-busy", "true");
+  $("cycle-day-results").scrollTop = 0;
+  try {
+    const data = await request(`/api/date?${new URLSearchParams({date: day})}`, "cycle-day");
+    if (!data || !dialog.open || input.value !== day) return;
+    const groups = new Map();
+    const rows = [...(data.rows || [])].sort((a, b) => b.boards - a.boards || compareStockFirstTime(a, b));
+    for (const row of rows) {
+      if (!groups.has(row.boards)) groups.set(row.boards, []);
+      groups.get(row.boards).push(row);
+    }
+    $("cycle-day-status").textContent = `${dateLabel(day)} · ${data.provisional ? "盘中暂定涨停" : "当日涨停"} ${numberValue(rows.length)} 只 · ${groups.size} 个板数${data.coverage_note ? ` · ${data.coverage_note}` : ""}`;
+    $("cycle-day-results").innerHTML = rows.length ? [...groups].map(([boards, stocks]) =>
+      `<section class="cycle-day-group" aria-label="${boards === 1 ? "首板" : `${boards}板`}股票"><h3>${boards === 1 ? "首板" : `${numberValue(boards)} 板`}<span>${numberValue(stocks.length)} 只</span></h3><ul class="cycle-day-stocks">${stocks.map(row => renderStockCard(row, {detailDate: day})).join("")}</ul></section>`
+    ).join("") : emptyHTML(data.data_status === "ok" ? "当日暂无涨停记录" : "当日数据尚未收录", data.coverage_note || "请选择其他交易日查看。", "calendar");
+  } catch (error) {
+    if (!dialog.open || input.value !== day) return;
+    $("cycle-day-status").textContent = "当天梯队暂时无法读取，请重试。";
+    $("cycle-day-results").innerHTML = `${emptyHTML("读取失败", error.message)}<button type="button" class="button secondary small" data-cycle-day-retry>重新加载</button>`;
+  } finally {
+    if (input.value === day) $("cycle-day-results").setAttribute("aria-busy", "false");
+  }
 }
 
 function containRelationWheel(event) {
@@ -3026,11 +3148,15 @@ function changeQueryDate() {
 
 function minuteRows() {
   const query = ($("minute-compare-search").value || "").trim().toUpperCase();
-  const rows = (state.intradayData?.rows || []).filter(row => !query || `${row.code} ${row.name} ${row.initials || ""}`.toUpperCase().includes(query))
+  const selectedCodes = [state.intradayCode, ...(state.minuteCompareCodes || [])];
+  const extraRows = [...(state.minuteMatchDetails?.values() || [])]
+    .filter(detail => detail.date === state.intradayDate)
+    .map(({stock, status}) => ({...stock, status}));
+  const rows = [...(state.intradayData?.rows || []), ...extraRows].filter(row => !query || `${row.code} ${row.name} ${row.initials || ""}`.toUpperCase().includes(query))
     .sort((a, b) => String(a.code).localeCompare(String(b.code)));
-  // Same stable priorities as the daily search cards: board height, latest
-  // limit-up within that height, then code. Filtering preserves this order.
-  return prioritizeLatest(rows, true).sort((a, b) => Number(b.boards) - Number(a.boards) || Number(b.stock_type === "broken") - Number(a.stock_type === "broken"));
+  const selected = new Set(query ? [] : selectedCodes);
+  // Outside search, pin selected stocks before the existing board/code priorities.
+  return prioritizeLatest(rows, true).sort((a, b) => Number(selected.has(b.code)) - Number(selected.has(a.code)) || Number(b.boards) - Number(a.boards) || Number(b.stock_type === "broken") - Number(a.stock_type === "broken"));
 }
 
 function minuteDates() {
@@ -3092,23 +3218,26 @@ function renderMinuteList() {
   const rows = minuteRows(), limit = state.minuteListLimit || 150;
   const visible = rows.slice(0, limit);
   visible.push(...rows.filter(row => (row.code === state.intradayCode || (state.minuteCompareCodes || []).includes(row.code)) && !visible.includes(row)));
-  $("minute-stock-count").textContent = `${rows.length} / ${state.intradayData?.total || 0}`;
-  $("minute-stock-list").innerHTML = visible.map(row => `<label class="minute-stock-row minute-compare-row" data-compare-row="${escapeHTML(row.code)}"><input type="checkbox" data-minute-compare="${escapeHTML(row.code)}" aria-label="对比 ${escapeHTML(row.name)} ${escapeHTML(row.code)}"><span class="minute-stock-row-name">${escapeHTML(row.name)}<small>${escapeHTML(row.code)} · <b${row.stock_type === "broken" ? ' class="minute-broken-type"' : ""}>${row.boards ? `${numberValue(row.boards)} 板` : row.stock_type === "broken" ? "破板" : "主板"}</b></small><small class="minute-compare-status" data-minute-status="${escapeHTML(row.code)}">${row.status === "ok" ? "已采集" : row.status === "partial" ? "部分数据" : "按需采集"}</small></span></label>`).join("") + (rows.length > visible.length ? `<span class="minute-more" data-minute-more>向下滚动自动加载（剩余 ${rows.length - visible.length} 只）</span>` : "") || emptyHTML("没有匹配的股票", "试试其他名称、代码或首字母。");
+  $("minute-stock-count").textContent = `${rows.length} / ${(state.intradayData?.total || 0) + (state.minuteMatchDetails?.size || 0)}`;
+  $("minute-stock-list").innerHTML = visible.map(row => `<label class="minute-stock-row minute-compare-row" data-compare-row="${escapeHTML(row.code)}"><input type="checkbox" data-minute-compare="${escapeHTML(row.code)}" aria-label="对比 ${escapeHTML(row.name)} ${escapeHTML(row.code)}"><span class="minute-stock-row-name">${escapeHTML(row.name)}<small>${escapeHTML(row.code)}${row.boards || row.stock_type === "broken" ? ` · <b${row.stock_type === "broken" ? ' class="minute-broken-type"' : ""}>${row.boards ? `${numberValue(row.boards)} 板` : "破板"}</b>` : ""}</small><small class="minute-compare-status" data-minute-status="${escapeHTML(row.code)}">${row.status === "ok" ? "已采集" : row.status === "partial" ? "部分数据" : "按需采集"}</small></span></label>`).join("") + (rows.length > visible.length ? `<span class="minute-more" data-minute-more>向下滚动自动加载（剩余 ${rows.length - visible.length} 只）</span>` : "") || emptyHTML("没有匹配的股票", "试试其他名称、代码或首字母。");
   updateMinuteCompareSelection();
 }
 
 function updateMinuteCompareSelection() {
   const codes = state.minuteCompareCodes || [];
+  // Keep checkbox nodes/focus intact; negative ranks leave the load-more hint last.
+  const order = new Map(minuteRows().map((stock, index, rows) => [stock.code, index - rows.length]));
   $("minute-compare-count").textContent = String(codes.length + (state.intradayCode ? 1 : 0));
   $("minute-compare-clear").disabled = !state.intradayCode && !codes.length;
   $("minute-stock-list").querySelectorAll("[data-compare-row]").forEach(row => {
     const code = row.dataset.compareRow, primary = code === state.intradayCode, index = codes.indexOf(code);
     const entry = state.minuteComparisons?.get(code), input = row.querySelector("input");
     input.checked = primary || index >= 0;
+    row.style.order = String(order.get(code) ?? 0);
     row.classList.toggle("selected", input.checked);
     row.classList.toggle("is-primary", primary);
     row.style.setProperty("--compare-color", primary ? "#ce6251" : index >= 0 ? minuteCompareStyle(index).color : "#8b8795");
-    const status = state.intradayData?.rows.find(stock => stock.code === code)?.status;
+    const status = state.intradayData?.rows.find(stock => stock.code === code)?.status || state.minuteMatchDetails?.get(code)?.status;
     row.querySelector(".minute-compare-status").textContent = primary ? (state.minuteLoading ? "主图 · 读取中" : "主图") : index < 0 ? (status === "ok" ? "已采集" : status === "partial" ? "部分数据" : "按需采集") : entry?.loading ? "读取中" : entry?.error ? "读取失败" : entry?.data?.points.length ? (entry.data.status === "partial" ? "部分数据" : "已叠加") : "无数据";
   });
 }
@@ -3187,7 +3316,9 @@ async function loadMinuteComparison(code) {
 }
 
 async function selectMinuteComparison(code, selected) {
-  const available = state.intradayData?.rows.some(row => row.code === code) || state.minuteTimelineData?.date === state.intradayDate && state.minuteTimelineData?.pool?.some(row => row.code === code);
+  const available = state.intradayData?.rows.some(row => row.code === code) ||
+    state.minuteMatchDetails?.get(code)?.date === state.intradayDate ||
+    state.minuteTimelineData?.date === state.intradayDate && state.minuteTimelineData?.pool?.some(row => row.code === code);
   if (code === state.intradayCode || selected && !available) return;
   const codes = state.minuteCompareCodes ||= [];
   if (selected && !codes.includes(code)) codes.push(code);
@@ -3243,6 +3374,8 @@ async function selectMinuteStock(code, selected) {
 }
 
 async function requestMinuteData(day, code, channel, current = () => true) {
+  const matchedDetail = state.minuteMatchDetails?.get(code);
+  if (matchedDetail?.date === day) return matchedDetail;
   let data = await request(`/api/intraday/stock?date=${encodeURIComponent(day)}&code=${encodeURIComponent(code)}`, channel);
   if (!current()) return null;
   if ((data?.needs_collection || data?.needs_refresh) && state.meta?.capabilities?.edit_tags === true) {
@@ -3397,8 +3530,21 @@ function minuteDisplayPoint(data, point) {
   return point;
 }
 
+function openMinuteMatchPair(day, primary, peer) {
+  state.minuteMatchDate = day;
+  state.minuteCompareCodes = [peer];
+  state.minuteSelectionCleared = false;
+  $("minute-compare-search").value = "";
+  setIntradayPane("mainboard", false);
+  const loading = loadIntraday({day, code: primary});
+  $("intraday-mainboard-tab").focus({preventScroll: true});
+  $("intraday-tabs").scrollIntoView({block: "start"});
+  return loading;
+}
+
 async function loadIntraday({day = state.intradayDate || "", code = state.intradayCode || ""} = {}) {
   stopMinuteTimelineCollection(false);
+  state.minuteMatchDetails = new Map();
   closeMinuteTimelineStockPickers();
   state.minuteTimelineData = null;
   $("minute-timeline-list").innerHTML = loadingHTML();
@@ -3442,10 +3588,23 @@ async function loadIntraday({day = state.intradayDate || "", code = state.intrad
     $("minute-scope").textContent = `${data.scope_note} 已采集的数据可离线查看。`;
     await loadMinuteTimeline();
     if (state.tab !== "intraday" || generation !== state.intradayGeneration) return;
-    const timelineCodes = new Set((state.minuteTimelineData?.pool || []).map(row => row.code));
+    const catalogCodes = new Set(data.rows.map(row => row.code));
+    const availableCodes = new Set([...catalogCodes, ...(state.minuteTimelineData?.pool || []).map(row => row.code)]);
+    if (state.minuteMatchDate === state.intradayDate) {
+      // A match may be outside the ordinary mainboard picker, but already has dated minute data.
+      const extraCodes = [...new Set([code, ...(state.minuteCompareCodes || [])])].filter(value => value && !catalogCodes.has(value));
+      const details = await Promise.all(extraCodes.map(value =>
+        request(`/api/intraday/stock?date=${encodeURIComponent(state.intradayDate)}&code=${encodeURIComponent(value)}&cached_match=1`, `minute-match-${value}`)
+      ));
+      if (state.tab !== "intraday" || generation !== state.intradayGeneration) return;
+      for (const detail of details.filter(Boolean)) {
+        state.minuteMatchDetails.set(detail.stock.code, detail);
+        availableCodes.add(detail.stock.code);
+      }
+    }
     const visible = minuteRows();
-    state.intradayCode = data.rows.some(row => row.code === code) || timelineCodes.has(code) ? code : state.minuteSelectionCleared ? "" : visible[0]?.code || data.rows[0]?.code || "";
-    state.minuteCompareCodes = [...new Set(state.minuteCompareCodes || [])].filter(value => value !== state.intradayCode && (data.rows.some(row => row.code === value) || timelineCodes.has(value)));
+    state.intradayCode = availableCodes.has(code) ? code : state.minuteSelectionCleared ? "" : visible[0]?.code || data.rows[0]?.code || "";
+    state.minuteCompareCodes = [...new Set(state.minuteCompareCodes || [])].filter(value => value !== state.intradayCode && availableCodes.has(value));
     renderMinuteList();
     updateURL({replace: true});
     if (state.intradayCode) await Promise.all([loadMinuteStock(state.intradayCode, false), ...state.minuteCompareCodes.map(value => loadMinuteComparison(value))]);
@@ -4092,9 +4251,11 @@ async function loadMinuteTimeline({quiet = false, refreshTimes = false} = {}) {
         return;
       }
     }
-    const attempted = state.minuteTimelineTimesRequested ||= new Set();
-    if (!data.provisional && state.meta?.capabilities?.edit_tags === true && data.time_coverage?.missing && (refreshTimes || !data.time_coverage.cached && !attempted.has(day))) {
-      attempted.add(day);
+    const attempted = state.minuteTimelineTimesRequested ||= new Map();
+    const today = day === state.meta?.live?.today;
+    const retryDue = today ? Date.now() - (attempted.get(day) || 0) >= 60000 : !data.time_coverage?.cached && !attempted.has(day);
+    if (state.meta?.capabilities?.edit_tags === true && data.time_coverage?.missing && (refreshTimes || retryDue)) {
+      attempted.set(day, Date.now());
       try {
         await request("/api/intraday/timeline/times", "minute-timeline-times", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({date: day, force: refreshTimes})});
         if (!current()) return;
@@ -4225,23 +4386,61 @@ async function openAnnouncement() {
   $("announcement-content").textContent = "正在读取公告…";
   $("announcement-content").classList.remove("empty");
   $("announcement-updated").hidden = true;
+  $("announcement-history-list").innerHTML = "";
+  $("announcement-history-status").textContent = "正在读取更新记录…";
+  $("announcement-history-status").hidden = false;
   $("retry-announcement").hidden = true;
   try {
     const data = await request("/api/announcement", "announcement");
     if (!data || state.announcementRequest !== generation || !dialog.open) return;
-    const notice = data.announcement || {};
-    const enabled = notice.enabled === true && typeof notice.content === "string" && notice.content.trim();
-    $("announcement-title").textContent = enabled && typeof notice.title === "string" && notice.title.trim() ? notice.title : "公告";
-    $("announcement-content").textContent = enabled ? notice.content : "暂无公告";
-    $("announcement-content").classList.toggle("empty", !enabled);
-    $("announcement-updated").hidden = !enabled || !notice.updated_at;
-    $("announcement-updated").textContent = enabled && notice.updated_at ? `更新于 ${String(notice.updated_at).replace("T", " ").slice(0, 16)}` : "";
+    renderAnnouncement(data.announcement || {}, data.history);
   } catch {
     if (state.announcementRequest !== generation || !dialog.open) return;
     $("announcement-content").textContent = "公告暂时无法读取，请稍后重试。";
+    $("announcement-history-status").textContent = "更新记录暂时无法读取。";
     $("retry-announcement").hidden = false;
   }
 }
+
+function renderAnnouncement(notice, history = []) {
+  const enabled = notice.enabled === true && typeof notice.content === "string" && notice.content.trim();
+  $("announcement-title").textContent = enabled && typeof notice.title === "string" && notice.title.trim() ? notice.title : "公告";
+  $("announcement-content").textContent = enabled ? notice.content : "暂无公告";
+  $("announcement-content").classList.toggle("empty", !enabled);
+  $("announcement-updated").hidden = !enabled || !notice.updated_at;
+  $("announcement-updated").textContent = enabled && notice.updated_at ? `更新于 ${String(notice.updated_at).replace("T", " ").slice(0, 16)}` : "";
+  $("retry-announcement").hidden = true;
+  $("announcement-history-list").innerHTML = history.map(entry=>`<article class="announcement-history-entry"><div><strong>${escapeHTML(entry.version)}</strong><time>${escapeHTML(entry.date)}</time></div><p>${escapeHTML(entry.content)}</p></article>`).join("");
+  $("announcement-history-status").textContent = history.length ? "" : "暂无历史更新记录";
+  $("announcement-history-status").hidden = history.length > 0;
+}
+
+async function maybeAutoAnnouncement() {
+  if (document.hidden || document.querySelector("dialog[open]")) return;
+  if (!state.autoAnnouncementChecked && !state.autoAnnouncementPending) {
+    // Manual reading and HEAD/GET requests never consume the IP's automatic popup.
+    const generation = state.announcementRequest || 0;
+    state.autoAnnouncementPending = true;
+    try {
+      const result = await request("/api/announcement/popup", "announcement-auto", {
+        method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"
+      });
+      if (!result) return;
+      state.autoAnnouncementChecked = result.cached === true && !result.checking;
+      const pinned = result.announcement?.enabled === true && typeof result.announcement.content === "string" && result.announcement.content.trim();
+      const updates = Array.isArray(result.history) && result.history.length > 0;
+      if (result.show === true && (pinned || updates) &&
+          generation === (state.announcementRequest || 0)) state.pendingAnnouncement = result;
+    } catch {
+      // A failed automatic check must not open an error dialog over the query page.
+    } finally { state.autoAnnouncementPending = false; }
+  }
+  if (!state.pendingAnnouncement || document.hidden || document.querySelector("dialog[open]")) return;
+  renderAnnouncement(state.pendingAnnouncement.announcement, state.pendingAnnouncement.history);
+  $("announcement-dialog").showModal();
+  state.pendingAnnouncement = null;
+}
+
 
 $("announcement-button").addEventListener("click", openAnnouncement);
 $("retry-announcement").addEventListener("click", openAnnouncement);
@@ -4267,7 +4466,20 @@ $("nav-blacklist").addEventListener("click", () => { loadBlacklist(); $("main").
 $("nav-tags").addEventListener("click", () => { loadTagManager(); $("main").scrollIntoView({block: "start"}); });
 bindTagManager();
 bindTagBatch();
-$("nav-intraday").addEventListener("click", () => { loadIntraday(); $("main").scrollIntoView({block: "start"}); });
+$("nav-intraday").addEventListener("click", () => { if (state.intradayPane === "compare") setView("intraday"); else loadIntraday(); $("main").scrollIntoView({block: "start"}); });
+$("intraday-tabs").addEventListener("click", event => {
+  const button = event.target.closest("[data-intraday-pane]");
+  if (!button) return;
+  setIntradayPane(button.dataset.intradayPane);
+  if (state.intradayPane === "mainboard" && state.intradayData?.date !== state.intradayDate) loadIntraday();
+});
+$("intraday-tabs").addEventListener("keydown", event => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const pane = event.key === "Home" ? "mainboard" : event.key === "End" ? "compare" : state.intradayPane === "compare" ? "mainboard" : "compare";
+  $(pane === "compare" ? "intraday-comparison-tab" : "intraday-mainboard-tab").click();
+  $(pane === "compare" ? "intraday-comparison-tab" : "intraday-mainboard-tab").focus();
+});
 $("nav-seven").addEventListener("click", () => { loadSeven(); $("main").scrollIntoView({block: "start"}); });
 $("seven-exclude-st").addEventListener("change", loadSeven);
 $("seven-exclude-gem").addEventListener("change", loadSeven);
@@ -4470,6 +4682,8 @@ $("edit-stock-profile-tags").addEventListener("click", () => {
 $("board-options").addEventListener("click", (event) => { const button = event.target.closest("[data-boards]"); if (button && button.dataset.boards !== state.boards) { state.boards = button.dataset.boards; loadDate(); } });
 $("date-table-area").addEventListener("click", (event) => { const button = event.target.closest("[data-stock-code]"); if (button) chooseStock({ code: button.dataset.stockCode, name: button.dataset.stockName }); });
 $("date-table-area").addEventListener("click", (event) => {
+  const sort = event.target.closest("[data-industry-sort]");
+  if (sort) { toggleIndustryCellSort(sort); return; }
   const above = event.target.closest("[data-above-column]");
   if (above) {
     const cell = $("date-table-area").querySelector(`.board-height-section[data-board-height="${above.dataset.aboveHeight}"] .matrix-cell[data-matrix-column="${above.dataset.aboveColumn}"]`);
@@ -4548,7 +4762,7 @@ $("stock-note-history").addEventListener("click", event => {
   if (remove) changeStockNoteEntryEditor(event, Number(remove.dataset.deleteNote), "delete");
 });
 $("undo-stock-note").addEventListener("click", event => { if (state.noteUndoId) changeStockNoteEntryEditor(event, state.noteUndoId, "restore"); });
-for (const container of [$("date-table-area"), $("stock-profile-note"), $("minute-stock-note"), $("seven-runs")]) {
+for (const container of [$("date-table-area"), $("stock-profile-note"), $("minute-stock-note"), $("seven-runs"), $("intraday-comparison-demo")]) {
   container.addEventListener("click", event => {
     const button = event.target.closest("[data-edit-stock-note]");
     if (button) openStockEditor(button.dataset.editStockNote, true);
@@ -4729,6 +4943,8 @@ $("stock-relations").addEventListener("keydown", event => {
   $("relation-peer-list").querySelector('[aria-pressed="true"]')?.scrollIntoView({block: "nearest"});
 });
 function handleRelationClick(event) {
+  const ladder = event.target.closest("[data-cycle-day]");
+  if (ladder) { openCycleDayDialog(ladder.dataset.cycleDay, ladder.dataset.cycleStartKnown !== "0"); return; }
   if (!state.relationships) return;
   if (event.target.closest("[data-retry-comparison]")) { loadPeerComparison({retry: true}); return; }
   const sort = event.target.closest("[data-relation-sort]");
@@ -4753,6 +4969,18 @@ function handleRelationClick(event) {
 $("stock-relations").addEventListener("click", handleRelationClick);
 $("stock-cycles").addEventListener("click", handleRelationClick);
 $("stock-chart").addEventListener("click", handleRelationClick);
+$("close-cycle-day").addEventListener("click", () => $("cycle-day-dialog").close());
+$("cycle-day-date").addEventListener("change", loadCycleDay);
+for (const [id, direction] of [["cycle-day-prev", -1], ["cycle-day-next", 1]]) {
+  $(id).addEventListener("click", () => {
+    const dates = state.meta?.query_dates || state.meta?.dates || [];
+    const day = $("cycle-day-date").value;
+    const next = direction < 0 ? dates.filter(date => date < day).at(-1) : dates.find(date => date > day);
+    if (next) { $("cycle-day-date").value = next; loadCycleDay(); }
+  });
+}
+$("cycle-day-results").addEventListener("click", event => { if (event.target.closest("[data-cycle-day-retry]")) loadCycleDay(); });
+$("cycle-day-dialog").addEventListener("close", () => { state.requests["cycle-day"]?.abort(); });
 
 async function restoreFromURL({remember = false} = {}) {
   state.requests.search?.abort();
@@ -4785,8 +5013,10 @@ async function restoreFromURL({remember = false} = {}) {
   }
   if (view === "tags") state.tagManagerName = params.get("tag") || "";
   if (view === "intraday") {
+    state.intradayPane = params.get("minute_tab") === "compare" ? "compare" : "mainboard";
     $("minute-timeline-exclude-gem").checked = params.get("timeline_gem") !== "1";
     state.intradayDate = params.get("date") || "";
+    state.minuteMatchDate = params.get("minute_match") === "1" ? state.intradayDate : null;
     state.intradayCode = params.get("minute_code") || "";
     state.minuteCompareCodes = [...new Set((params.get("minute_compare") || "").split(",").filter(code => /^\d{6}$/.test(code)))];
     $("minute-compare-search").value = "";
@@ -4798,7 +5028,7 @@ async function restoreFromURL({remember = false} = {}) {
   setView(view, false);
   // Initial loads and history traversal may normalize a URL, but never add a visit.
   updateURL({replace: true});
-  if (view === "intraday") await loadIntraday();
+  if (view === "intraday") { if (state.intradayPane !== "compare") await loadIntraday(); }
   else if (view === "seven") await loadSeven();
   else if (view === "tags") await loadTagManager();
   else if (view === "blacklist") await loadBlacklist();
@@ -4843,3 +5073,8 @@ document.fonts.ready.then(() => {
   document.documentElement.dataset.uiFont = loaded.length ? "Noto Sans SC" : "fallback";
   document.documentElement.dataset.uiFontWeights = loaded.map(face => face.weight).join(",");
 });
+
+setInterval(maybeAutoAnnouncement, 5000);
+setInterval(() => { state.autoAnnouncementChecked = false; maybeAutoAnnouncement(); }, 300000);
+document.addEventListener("visibilitychange", maybeAutoAnnouncement);
+setTimeout(maybeAutoAnnouncement, 1500);

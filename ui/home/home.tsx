@@ -42,8 +42,10 @@ export function renderHomeParts() {
     stockEditorFade: renderToStaticMarkup(<ScrollFade progress={0} surfaceClassName="from-background-secondary-default" />),
     stockEditorFadeDistance: SCROLL_FADE_DISTANCE,
     buttons: [
-      { id: "stock-query-button", html: renderToStaticMarkup(<Button id="stock-query-button" type="submit" className="button primary" trailingIcon={RiArrowRightLine}>查询</Button>) },
-      { id: "latest-date", html: renderToStaticMarkup(<Button id="latest-date" className="button secondary small" variant="secondary">最新交易日</Button>) },
+      { id: "stock-query-button", html: renderToStaticMarkup(<Button id="stock-query-button" type="submit" className="button primary query-control-button query-action" trailingIcon={RiArrowRightLine}>查询</Button>) },
+      { id: "latest-date", html: renderToStaticMarkup(<Button id="latest-date" className="button secondary query-control-button query-latest-date" variant="secondary">最新交易日</Button>) },
+      { id: "minute-latest-date", html: renderToStaticMarkup(<Button id="minute-latest-date" className="button secondary query-control-button query-latest-date" variant="secondary" title="项目交易日历中的最新交易日，未缓存分时按需读取" disabled>最新交易日</Button>) },
+      { id: "minute-refresh", html: renderToStaticMarkup(<Button id="minute-refresh" className="button secondary query-control-button query-action" variant="secondary">刷新数据</Button>) },
       { id: "close-tags", html: renderToStaticMarkup(<Button id="close-tags" variant="secondary" iconOnly leadingIcon={RiCloseLine} aria-label="关闭股票资料" autoFocus />) },
       { id: "add-tag", html: renderToStaticMarkup(<Button id="add-tag" className="button secondary stock-editor-add" variant="secondary" disabled>添加</Button>) },
       { id: "save-stock-note", html: renderToStaticMarkup(<Button id="save-stock-note" type="submit" className="button secondary stock-editor-add" variant="secondary" disabled>添加</Button>) },

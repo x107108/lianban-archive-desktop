@@ -66,29 +66,40 @@ body.boardui-preview { --font-inter: var(--font); }
   .free-notice h2 { @apply text-caption-1-medium; color: var(--color-text-secondary); }
   .free-notice p { @apply text-caption-2-regular; margin: 0; color: var(--color-text-secondary); line-height: 1.8; }
   .stock-sticky { box-shadow: none; }
-  .unified-query { margin-top: 20px; padding: 20px; border-radius: 20px; border-color: var(--line); box-shadow: var(--shadow-card); background: var(--surface); }
+  .unified-query { --query-action-width: 104px; display: block; margin-top: 20px; padding: 20px; border-radius: 20px; border-color: var(--line); box-shadow: var(--shadow-card); background: var(--surface); @apply text-body-regular; }
   .query-panel-heading { display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px; }
   .query-panel-heading h2 { @apply text-headline-medium; }
-  .query-panel-heading p { @apply text-caption-1-regular; color: var(--color-text-secondary); }
-  .unified-query form { display: grid; grid-template-columns: auto minmax(180px,1fr) auto; gap: 16px; align-items: end; }
+  .query-panel-heading p { @apply text-body-2-medium; color: var(--color-text-secondary); }
+  .unified-query .query-fields { --query-control-height: 40px; display: grid; grid-template-columns: auto minmax(180px,1fr); gap: 16px; align-items: end; }
+  .unified-query .query-fields-action { grid-template-columns: auto minmax(180px,1fr) var(--query-action-width); }
   .unified-query .stock-picker { grid-column: auto; min-width: 0; }
-  .unified-query .sr-only { position: static; width: auto; height: auto; margin: 0 0 8px; overflow: visible; clip: auto; white-space: normal; display: block; @apply text-caption-1-medium; color: var(--color-text-secondary); }
+  .unified-query .query-label { display: block; margin-block-end: 8px; @apply text-body-2-medium; color: var(--color-text-secondary); }
   .unified-query .date-controls { height: 40px; margin: 0; gap: 8px; }
   .unified-query input[type=date], .unified-query .icon-button { height: 40px; border-radius: 10px; border-color: var(--line); background: var(--surface); }
   .unified-query input[type=date] { width: 144px; min-width: 144px; padding: 0 12px; @apply text-body-regular; }
   .unified-query .icon-button { width: 36px; flex: none; color: var(--color-text-secondary); }
   .unified-query .stock-search-wrap { height: 40px; border-radius: 10px; background: var(--color-background-secondary-default); border-color: var(--line); }
   .unified-query .stock-search-wrap input { @apply text-body-regular; height: 38px; }
+  .unified-query .query-stock-toggle { width: 100%; padding: 0 10px; text-align: start; color: var(--color-text-primary); @apply text-body-medium; }
+  .query-stock-toggle > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .unified-query .stock-search-wrap > svg { color: var(--color-text-tertiary); }
+  .unified-query .minute-stock-picker-popup input[type=search] { border: 1px solid var(--line); padding: 0 10px; background: var(--surface); @apply text-body-regular; }
   .stock-search-wrap input::placeholder { color: var(--color-text-placeholder); }
-  #latest-date { height: 40px; border-radius: 10px; @apply text-caption-1-medium; background: var(--surface); border-color: var(--line); color: var(--color-text-primary); }
-  #stock-query-button { height: 40px; min-width: 104px; padding: 8px 16px; border-radius: 10px; @apply text-body-medium; background: var(--gradient-button-primary-default); color: var(--color-text-white); border: 0; margin: 0; grid-column: auto; }
+  .unified-query .button.query-control-button { display: inline-flex; align-items: center; justify-content: center; flex: none; height: var(--query-control-height); min-height: var(--query-control-height); padding: 0 12px; border-radius: 10px; white-space: nowrap; box-shadow: var(--shadow-xs); @apply text-body-2-semibold; }
+  .unified-query .query-control-button.secondary { border: 1px solid var(--line); background: var(--surface); color: var(--color-text-primary); }
+  .unified-query .query-control-button.secondary:hover:not(:disabled) { background: var(--color-background-primary-hover); border-color: var(--color-border-button-hover); }
+  .unified-query .query-control-button.secondary:disabled { background: var(--color-background-primary-disabled); color: var(--color-text-tertiary); box-shadow: none; }
+  .unified-query .query-latest-date { width: 104px; }
+  .unified-query .query-control-button.query-action { grid-column: 3; width: var(--query-action-width); }
+  #stock-query-button { background: var(--gradient-button-primary-default); color: var(--color-text-white); border: 0; margin: 0; }
   #stock-query-button:hover { background: var(--gradient-button-primary-hover); }
   #stock-query-button:active { background: var(--gradient-button-primary-active); transform: none; }
-  .recent-stocks { padding-top: 14px; margin-top: 16px; border-color: var(--color-separator-border); gap: 12px; }
+  .unified-query .query-footer { display: flex; align-items: center; justify-content: flex-start; gap: 12px; margin-block-start: 16px; padding-block-start: 12px; border-block-start: 1px solid var(--color-separator-border); color: var(--color-text-secondary); @apply text-caption-1-medium; }
+  .unified-query .query-footer .minute-coverage { display: flex; align-items: center; min-height: 28px; margin: 0; width: auto; @apply text-caption-1-medium; }
   .recent-stocks-label { display: inline-flex; align-items: center; height: 28px; @apply text-caption-2-medium; color: var(--color-text-secondary); white-space: nowrap; }
   .recent-stocks .recent-stock-list { gap: 6px; min-width: 0; max-height: none; flex: 1; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 0; scrollbar-width: thin; scrollbar-color: var(--color-border-button-hover) transparent; }
   .recent-stock-list button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; height: 28px; min-height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid transparent; background: var(--color-background-secondary-default); color: var(--color-text-secondary); @apply text-caption-2-medium; }
-  .recent-stock-list button:hover { color: var(--color-accent-700); border-color: var(--color-accent-200); background: var(--color-accent-50); }
+  .recent-stock-list button:hover, .recent-stock-list button[aria-pressed=true] { color: var(--color-accent-700); border-color: var(--color-accent-200); background: var(--color-accent-50); }
   #date-view .section-top { padding: 24px 0 16px; display: flex; align-items: center; }
   #date-view .section-top h2 { @apply text-headline-medium; }
   #date-subtitle { @apply text-caption-1-regular; margin-top: 4px; color: var(--color-text-secondary); }
@@ -147,6 +158,7 @@ body.boardui-preview { --font-inter: var(--font); }
   .matrix-cell .industry-stock { padding: 16px; border-color: var(--line); }
   .industry-stock.blacklisted-stock, .industry-stock.blacklisted-stock.latest-limit-up, .industry-stock.blacklisted-stock:hover { background: var(--color-background-secondary-default); box-shadow: inset 3px 0 var(--color-border-button-hover); }
   .stock-blacklist-badge { color: var(--color-text-secondary); background: var(--color-background-secondary-default); border-color: var(--color-border-button-hover); }
+  .stock-bond-badge { color: var(--color-violet-700); background: var(--color-violet-50); border-color: var(--color-violet-200); }
   .stock-tags { gap: 6px; }
   .stock-tag { border-radius: 6px; border-color: var(--color-accent-100); background: var(--color-accent-50); color: var(--color-accent-700); padding: 2px 6px; font-weight: 500; }
   .stock-tag-parent { color: var(--color-text-secondary); background: var(--color-background-secondary-default); border-color: var(--line); }
@@ -160,18 +172,18 @@ body.boardui-preview { --font-inter: var(--font); }
     .results-options { margin: 0 24px 16px auto; }
   }
   @media(max-width:1000px) {
-    .unified-query form { grid-template-columns: auto minmax(140px,1fr) auto; gap: 12px; }
-    .unified-query #stock-query-button { min-width: 80px; padding: 8px 12px; }
     .archive-range strong { @apply text-caption-1-medium; }
     .home-stat-cards { gap: 12px; }
     .home-stat-cards > section { padding: 16px; }
     .home-stat-cards > section > span { top: 16px; right: 16px; padding: 6px; }
   }
   @media(max-width:760px) {
-    .unified-query form { grid-template-columns: minmax(0,1fr) auto; gap: 16px 12px; }
+    .unified-query .query-fields { grid-template-columns: minmax(0,1fr) auto; gap: 16px 12px; }
+    .unified-query .query-fields-action { grid-template-rows: auto minmax(66px,auto); }
     .query-date { grid-column: 1/-1; }
     .unified-query .stock-picker { grid-column: 1; }
-    .unified-query #stock-query-button { grid-column: 2; }
+    .unified-query .query-fields:not(.query-fields-action) .stock-picker { grid-column: 1/-1; }
+    .unified-query .query-control-button.query-action { grid-column: 2; grid-row: 2; }
     .free-notice { display: block; }
     .free-notice p { margin-top: 4px; }
     .intro { display: block; }
@@ -202,11 +214,11 @@ body.boardui-preview { --font-inter: var(--font); }
     .intro-title-line h1 { @apply text-title-1-semibold; }
     .intro-description { @apply text-caption-2-regular; }
     .unified-query { border-radius: 16px; }
-    .unified-query input[type=date] { width: 128px; min-width: 128px; padding: 0 8px; }
+    .unified-query .date-input-wrap { flex: 0 1 128px; min-width: 0; }
+    .unified-query .date-input-wrap input[type=date] { width: 100%; min-width: 0; padding: 0 8px; }
     .unified-query .icon-button { width: 32px; }
     .unified-query .date-controls { gap: 4px; }
-    #latest-date { padding: 4px 6px; font-size: 10px; }
-    #stock-query-button { min-width: 72px; padding: 8px; }
+    .unified-query .date-controls .query-latest-date { width: 84px; padding: 0 6px; @apply text-caption-1-semibold; }
     .recent-stocks { align-items: flex-start; }
     .home-stat-cards > section { height: 144px; border-radius: 16px; }
     .home-stat-cards > section > div > div > p { @apply text-title-2-semibold; }
@@ -221,9 +233,6 @@ body.boardui-preview { --font-inter: var(--font); }
   /* Keep dense data readable without changing the original interface or chart coordinates. */
   .nav-item > span { @apply text-caption-1-semibold; }
   .button { @apply text-body-2-semibold; }
-  #latest-date { @apply text-caption-1-semibold; }
-  #stock-query-button { @apply text-body-semibold; }
-  .unified-query .sr-only, .query-panel-heading p { @apply text-body-2-medium; }
   .unified-query .stock-search-wrap input { @apply text-body-medium; }
   .intro-description, .free-notice p, .archive-range .micro-label, .archive-range > span:last-child,
   .results-heading .muted, #date-subtitle, .section-subtitle, .industry-board-summary, .panel-footnote,

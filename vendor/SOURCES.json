@@ -44,6 +44,31 @@
       "url": "https://files.pythonhosted.org/packages/1a/62/c8d562e7766786ba6587d09c5a8ba9f718ed3fa8af7f4553e8f91c36f302/xlrd-2.0.2-py2.py3-none-any.whl",
       "file": "vendor/wheels/xlrd-2.0.2-py2.py3-none-any.whl",
       "sha256": "ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/28/b8/ccba7fa0dd4d1809a6244c04e58173b648fbb64d7cb158387b70d6695e7f/baostock-0.9.2-py3-none-any.whl",
+      "file": "vendor/wheels/baostock-0.9.2-py3-none-any.whl",
+      "sha256": "f7aaca22eb010db268a2b8bc3ed1a8743cc6f1989902477c65c1c3c022d2ecbf"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/38/ef/15b6a24451e75f2d48931062f73a5ebbd00d86394d750699dbd8d6b159b6/pandas-3.1.1-cp313-cp313-win_amd64.whl",
+      "file": "vendor/wheels/pandas-3.1.1-cp313-cp313-win_amd64.whl",
+      "sha256": "6d84760cc1bd799440a66b4df2ceb7a508870f3b8b4d8dda21befd62779cd3b4"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/90/8c/140a40398a66b4471211be1affdb6ed24c486d581bd28d07b7f2fcb69540/numpy-2.5.4-cp313-cp313-win_amd64.whl",
+      "file": "vendor/wheels/numpy-2.5.4-cp313-cp313-win_amd64.whl",
+      "sha256": "8b4d2fd2d34e5f8c9235ee787de5631a37a28402b15cb80814df973d2be54129"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/2f/a9/52b89563d154433d79b51ed1eb4842bf7334cb2696891a7fe135618853d7/python_dateutil-4.0.0-py3-none-any.whl",
+      "file": "vendor/wheels/python_dateutil-4.0.0-py3-none-any.whl",
+      "sha256": "a5e246f79eb80475e691bf93862cead98decd8a498cf53ba0516fcdc0f50dc1c"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/0a/66/9a06c2227fedfd4919f0eaaa8b94377d9730882a7e4f95823c9a331ab5e1/tzdata-2026.6-py2.py3-none-any.whl",
+      "file": "vendor/wheels/tzdata-2026.6-py2.py3-none-any.whl",
+      "sha256": "0a10eec6e13ef16b627fabed9a5f2ba61a62b1c67f327305f4e7e412a70b4aec"
     }
   ]
 }

@@ -13,3 +13,7 @@
 # Mac 运行环境补充（2026.11.03）
 
 Mac 完整安装包另附 Astral 维护的 [Python Standalone Builds](https://github.com/astral-sh/python-build-standalone)，固定来源和 SHA-256 见 `macos-runtimes.json`。它包含 CPython 和其构建所需组件；原有许可随运行环境一并提供，解压后保留，不改变本项目代码或既有依赖的许可。
+
+## 2026.11.25 公开交易状态及开盘价
+
+BaoStock 0.9.2 用于核对停牌交易状态和不复权开盘价，随附原始发行包及许可；其依赖 pandas、NumPy、python-dateutil、tzdata 分别按目标系统打包，固定版本与 PyPI 原始下载地址、SHA-256 见 requirements.txt、vendor/SOURCES.json、macos-wheels.json。保留各 wheel 内的许可证和第三方声明。本版继续使用公开分钟来源，不分发本地测试环境的 ELTDX。自由流通股本未能从可发布来源核实时继续留空。

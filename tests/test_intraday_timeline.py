@@ -1,5 +1,6 @@
 from contextlib import closing
 from copy import deepcopy
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -14,6 +15,7 @@ import database as db
 import intraday
 import intraday_sources
 import intraday_timeline as timeline
+import live_pool
 import provider
 
 
@@ -27,6 +29,80 @@ def point(time, price=10, volume=10000):
 
 
 class TimelineTests(unittest.TestCase):
+    def test_today_uses_live_clocks_for_confirmed_and_provisional_pools(self):
+        now = datetime.fromisoformat("2026-11-11T10:00:00+08:00")
+        day = now.date().isoformat()
+        stamp = int(now.replace(hour=9, minute=30, second=21).timestamp())
+        payload = {"code": 20000, "data": [{"symbol": "000001.SZ", "stock_chi_name": "测试股",
+            "limit_up_days": 1, "price": 11, "change_percent": .1,
+            "first_limit_up": stamp, "last_limit_up": stamp}]}
+        for provisional in (False, True):
+            with self.subTest(provisional=provisional):
+                root = Path(__file__).parent / "test-data" / ("live-clocks-" + uuid4().hex)
+                root.mkdir(parents=True)
+                path = root / "archive.sqlite3"
+                with closing(db.connect(path)) as conn:
+                    db.set_settings(conn, range_start=day, range_end=day, calendar_dates=[day])
+                    result = provider.DayResult(day, [stock(date=day, boards=4)], "ok", "", "cls.json", provider.CLS_SOURCE)
+                    if provisional:
+                        live_pool.save_snapshot(conn, result, now=now)
+                    else:
+                        db.save_day(conn, day, result.records, result.source)
+                    before = [dict(r) for r in conn.execute("SELECT * FROM events")]
+                with patch.object(timeline, "datetime", wraps=datetime) as clock, \
+                     patch.object(provider, "_get", return_value=SimpleNamespace(json=lambda: payload)) as fetch, \
+                     patch.object(provider, "_historical_day") as history, \
+                     patch.object(provider, "_save_raw", return_value="live-clocks.json"), \
+                     patch.object(db, "now_iso", return_value=now.isoformat()):
+                    clock.now.return_value = now
+                    self.assertFalse(timeline.collect_seal_times(path, day)["cached"])
+                    self.assertTrue(timeline.collect_seal_times(path, day)["cached"])
+                    fetch.assert_called_once_with(provider.POOL_URL, {"pool_name": "limit_up"}, attempts=1)
+                    history.assert_not_called()
+                daily = app.read_api(SimpleNamespace(db_path=path), "/api/date?date=" + day)
+                self.assertEqual(daily["rows"][0]["first_time"], "09:30:21")
+                self.assertEqual(daily["rows"][0]["boards"], 4)
+                self.assertEqual(daily["provisional"], provisional)
+                self.assertEqual(daily["time_coverage"], {"cached": True, "missing": 0})
+                timeline_stock = timeline.timeline(path, day, include_live=True)["pool"][0]
+                self.assertEqual(timeline_stock["first_time"], "09:30:21")
+                self.assertEqual(timeline_stock["initials"], "CSG", "confirmed and provisional pools include searchable pinyin initials")
+                with closing(db.connect(path)) as conn:
+                    self.assertEqual([dict(r) for r in conn.execute("SELECT * FROM events")], before)
+
+    def test_today_refreshes_partial_clocks_and_keeps_verified_cache_on_failure(self):
+        now = datetime.fromisoformat("2026-11-11T10:00:00+08:00")
+        day = now.date().isoformat()
+        root = Path(__file__).parent / "test-data" / ("clock-retry-" + uuid4().hex)
+        root.mkdir(parents=True)
+        path = root / "archive.sqlite3"
+        with closing(db.connect(path)) as conn:
+            db.save_day(conn, day, [stock(date=day), stock("600001", date=day)], provider.CLS_SOURCE)
+        stamp = int(now.replace(hour=9, minute=30, second=21).timestamp())
+        raw = {"symbol": "000001.SZ", "stock_chi_name": "测试股", "limit_up_days": 1,
+               "price": 11, "change_percent": .1, "first_limit_up": stamp, "last_limit_up": stamp}
+        payload = {"code": 20000, "data": [raw]}
+        with patch.object(timeline, "datetime", wraps=datetime) as clock, \
+             patch.object(provider, "_get", side_effect=lambda *a, **k: SimpleNamespace(json=lambda: payload)) as fetch, \
+             patch.object(provider, "_save_raw", return_value="live-clocks.json"), \
+             patch.object(db, "now_iso", side_effect=lambda: clock.now.return_value.isoformat()):
+            clock.now.return_value = now
+            timeline.collect_seal_times(path, day)
+            clock.now.return_value = now + timedelta(seconds=30)
+            self.assertTrue(timeline.collect_seal_times(path, day)["cached"])
+            self.assertEqual(fetch.call_count, 1)
+            clock.now.return_value = now + timedelta(seconds=60)
+            payload = {"code": 20000, "data": [{**raw, "symbol": "600001.SS", "first_limit_up": stamp+60, "last_limit_up": stamp+60}]}
+            timeline.collect_seal_times(path, day)
+            self.assertEqual(fetch.call_count, 2)
+            cached = timeline.cached_seal_times(path, day)
+            self.assertEqual(set(cached["stocks"]), {"000001", "600001"}, "a partial real-time response preserves earlier verified clocks")
+            clock.now.return_value = now + timedelta(seconds=120)
+            payload = {"code": 20000, "data": [{**raw, "first_limit_up": stamp-86400}]}
+            with self.assertRaises(provider.ProviderError):
+                timeline.collect_seal_times(path, day)
+            self.assertEqual(timeline.cached_seal_times(path, day), cached, "a stale source cannot replace verified clocks")
+
     def test_clock_post_route_works_and_read_only_mode_rejects_collection(self):
         server = app.ThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
         server.db_path = Path("unused.sqlite3")

@@ -29,16 +29,16 @@ context.state.grouping = 'region';
 assert.ok(!context.renderIndustryColumns(rows).includes('stock-session-summary'), 'region counts keep their existing meaning');
 assert.equal(JSON.stringify(rows), before, 'display changes never rewrite the archive or tags');
 
-// Missing source clocks are supplemented once without replacing a newer date or view.
+// Historical clocks load once; today's missing clocks retry at the minute cadence.
 const elements = new Map();
 const element = id => {
   if (!elements.has(id)) elements.set(id, {value: '2026-10-30', innerHTML: '', textContent: '',
     setAttribute() {}, querySelectorAll: () => [], querySelector: () => null});
   return elements.get(id);
 };
-let requests = [], pending, fail = false;
+let requests = [], pending, fail = false, clock = 100000;
 const daily = {date: '2026-10-30', data_status: 'ok', rows: [stock('000001', null)], time_coverage: {cached: false, missing: 1}};
-const loader = vm.createContext({URLSearchParams, Set, $: element,
+const loader = vm.createContext({URLSearchParams, Date: {now: () => clock}, $: element,
   state: {tab: 'date', meta: {capabilities: {edit_tags: true}}, requests: {}},
   setView() {}, clearError() {}, loadingHTML() {}, setStats() {}, updateDateNavigation() {}, updateURL() {}, loadShareholderAlerts() {},
   getDateQuery: () => new URLSearchParams({date: element('trade-date').value}),
@@ -68,10 +68,26 @@ vm.runInContext(source.slice(source.indexOf('async function loadDate'), source.i
   assert.equal(requests.length, 1, 'read-only views never collect');
   loader.state.meta.capabilities.edit_tags = true; daily.data_status = 'provisional'; requests = [];
   await loader.loadDate();
-  assert.equal(requests.length, 1, 'provisional snapshots are not enriched with closing-only clocks');
+  assert.equal(requests.length, 3, 'provisional snapshots can request date-validated source clocks');
   daily.data_status = 'ok'; daily.time_coverage.cached = true; requests = [];
   await loader.loadDate();
   assert.equal(requests.length, 1, 'an existing partial cache is reused');
+  loader.state.meta.live = {today: daily.date};
+  loader.state.dateTimesRequested.clear(); requests = []; fail = true;
+  await loader.loadDate();
+  assert.equal(requests.filter(r => r.channel === 'date-times').length, 1, 'today retries an incomplete cache');
+  clock += 59999;
+  await loader.loadDate();
+  assert.equal(requests.filter(r => r.channel === 'date-times').length, 1, 'filtering cannot retry a failure within the minute');
+  clock++;
+  await loader.loadDate();
+  assert.equal(requests.filter(r => r.channel === 'date-times').length, 2, 'today retries failures after one minute');
+  fail = false; daily.data_status = 'provisional'; clock += 60000;
+  await loader.loadDate();
+  assert.equal(requests.filter(r => r.channel === 'date-times').length, 3, 'new provisional stocks can supplement the shared cache');
+  assert.equal(JSON.parse(requests.at(-2).options.body).force, undefined, 'automatic polling respects the server cache throttle');
+  daily.data_status = 'ok'; loader.state.meta.live = null;
+  loader.state.dateTimesRequested.clear();
   daily.time_coverage.cached = false; requests = [];
   let release;
   pending = new Promise(resolve => { release = resolve; });

@@ -9,6 +9,47 @@ from collections import defaultdict
 import re
 
 
+def confirmed_suspensions(conn, codes, end):
+    marks = ",".join("?" for _ in codes)
+    rows = conn.execute(
+        f"SELECT date,code FROM suspension_records WHERE full_day=1 AND date<=? AND code IN ({marks}) "
+        f"UNION SELECT date,code FROM verified_suspension_days WHERE date<=? AND code IN ({marks})",
+        [end, *codes, end, *codes])
+    result = defaultdict(set)
+    for day, code in rows:
+        result[code].add(day)
+    return result
+
+
+def observed_runs(rows, calendar, coverage, suspensions):
+    """Shared cycle rules for stock summaries, pair timelines and period leaders."""
+    calendar = sorted(set(calendar) | set(coverage))
+    indices = {day: index for index, day in enumerate(calendar)}
+    runs, current, previous_rows = [], {}, {}
+    for row in rows:
+        code = row["code"]
+        previous = previous_rows.get(code)
+        run = current.get(code)
+        halted = suspensions.get(code, set())
+        left = indices.get(previous["date"], -1) if previous else -1
+        right = indices.get(row["date"], -1)
+        between = calendar[left + 1:right] if previous else []
+        joined = bool(previous and 0 <= left < right and all(day in halted for day in between)
+                      and (row["boards"] == previous["boards"] + 1 or between and row["boards"] == 1))
+        if joined:
+            run["boards"] += 1
+            run["suspension_dates"].extend(between)
+        else:
+            run = {"code": code, "name": row["name"], "boards": row["boards"],
+                   "start_known": row["boards"] == 1, "dates": [], "suspension_dates": []}
+            runs.append(run)
+            current[code] = run
+        run["name"] = row["name"]
+        run["dates"].append({"date": row["date"], "boards": run["boards"]})
+        previous_rows[code] = row
+    return runs
+
+
 def _add_period_leaders(conn, segments, code, peer_code, end, indices, exclude_st=False, exclude_gem=False):
     """Pick another stock by the full observed run that intersects each period."""
     eligible = defaultdict(list)
@@ -46,31 +87,21 @@ def _add_period_leaders(conn, segments, code, peer_code, end, indices, exclude_s
     candidates = sorted(eligible)
     for offset in range(0, len(candidates), 500):
         batch = candidates[offset:offset + 500]
-        current = None
-        for row in conn.execute(
+        rows = list(conn.execute(
                 "SELECT e.date,e.code,e.name,e.boards FROM events e "
                 "JOIN days d ON d.date=e.date AND d.status='ok' "
                 "WHERE e.date<=? AND e.code IN (" + ",".join("?" for _ in batch) + ") ORDER BY e.code,e.date",
-                [end, *batch]):
-            previous = current["dates"][-1] if current else None
-            connected = (current is not None and current["code"] == row["code"]
-                         and row["boards"] == previous["boards"] + 1
-                         and indices[row["date"]] == indices[previous["date"]] + 1)
-            if not connected:
-                if current:
-                    consider(current)
-                current = {"code": row["code"], "name": row["name"], "dates": []}
-            current["name"] = row["name"]
-            current["dates"].append({"date": row["date"], "boards": row["boards"]})
-        if current:
-            consider(current)
+                [end, *batch]))
+        coverage = {row["date"]: row["status"] for row in conn.execute("SELECT date,status FROM days WHERE date<=?", (end,))}
+        for run in observed_runs(rows, sorted(indices), coverage, confirmed_suspensions(conn, batch, end)):
+            consider(run)
 
 
 def stock_pair_comparison(conn, code, peer_code, start, end, settings, exclude_st=False, exclude_gem=False):
     """Full observed runs for two stocks, grouped by shared limit-up days.
 
-    Only consecutive, successful trading-day observations with increasing
-    heights join a run. Missing dates and unseen first boards are never filled.
+    Confirmed full suspensions preserve runs, including source counter resets.
+    Missing dates and unseen first boards are never filled.
     """
     coverage = {row["date"]: row["status"] for row in conn.execute(
         "SELECT date,status FROM days WHERE date<=?", (end,))}
@@ -80,15 +111,7 @@ def stock_pair_comparison(conn, code, peer_code, start, end, settings, exclude_s
         "SELECT e.date,e.code,e.name,e.boards FROM events e "
         "JOIN days d ON d.date=e.date AND d.status='ok' "
         "WHERE e.code IN (?,?) AND e.date<=? ORDER BY e.date,e.code", (code, peer_code, end))]
-    runs, current = [], {}
-    for row in rows:
-        previous = current.get(row["code"])
-        if (previous is None or row["boards"] != previous["dates"][-1]["boards"] + 1
-                or indices[row["date"]] != indices[previous["dates"][-1]["date"]] + 1):
-            previous = {"code": row["code"], "dates": []}
-            runs.append(previous)
-            current[row["code"]] = previous
-        previous["dates"].append({"date": row["date"], "boards": row["boards"]})
+    runs = observed_runs(rows, calendar, coverage, confirmed_suspensions(conn, [code, peer_code], end))
 
     parent = list(range(len(runs)))
     def root(index):

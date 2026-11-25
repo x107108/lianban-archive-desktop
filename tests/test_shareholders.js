@@ -75,7 +75,10 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   assert.ok(empty.includes("暂未获取成功")&&empty.includes("暂不标记同涨停"));
   const absent=context.renderShareholderTooltip({...data,profiles:[{scope:"total",report_date:null},{scope:"float",report_date:null}],rows:[],total:0,status:"current"});
   assert.ok(absent.includes("来源暂无可用股东资料"));
-  assert.ok(source.includes("</button>${renderShareholderIcon(row)}"),"daily cards have a separate icon");
+  Object.assign(context, {regionLabel:()=>"", stockTags:()=>[], latestLimitUp:()=>false, nameInitials:()=>"", textValue:String, canEditTags:()=>false, renderStockNote:()=>""});
+  vm.runInContext(source.slice(source.indexOf("function renderStockCard("),source.indexOf("function renderSuspensionNote(")),context);
+  const dailyCard=context.renderStockCard({code:"000001",name:"测试股"});
+  assert.ok(dailyCard.includes('</button><button type="button" class="shareholder-icon'),"daily cards have a separate sibling icon");
   assert.ok(source.includes("</button>${renderShareholderIcon(stock)}<span class="),"search suggestions have a sibling icon, not nested buttons");
   assert.ok(source.includes('$("stock-shareholder-icon").innerHTML = renderShareholderIcon(stock)'));
   const many={...data,total:51,rows:Array.from({length:51},(_,i)=>({...data.rows[0],code:String(i).padStart(6,"0")}))};
@@ -122,6 +125,17 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   const missingRatios=context.renderShareholderTooltip({...data,own_holders:{total:[{name:"真实零比例",type:"个人",holding_ratio:0},{name:"未披露比例",type:"个人",holding_ratio:null}],float:[]}});
   assert.match(missingRatios,/已披露比例合计<\/span>\s*<small>1 \/ 2 位股东已披露 · 占总股本<\/small><\/div>\s*<strong>0\.00%<\/strong>/);
   assert.ok(missingRatios.includes("0.00%")&&missingRatios.includes("未披露"),"zero is displayed distinctly from an absent ratio");
+  for (const [tab, scope] of [["holders", "total"], ["float", "float"]]) {
+    context.state.shareholderTab = tab;
+    const ratios = [6, 5, 5.00001, 4.99999, 0, null, undefined];
+    const html = context.renderShareholderTooltip({...data, own_holders: {
+      [scope]: ratios.map((holding_ratio, index) => ({name: `股东${index}`, type: "个人", holding_ratio}))
+    }});
+    const cells = [...html.matchAll(/<strong class="shareholder-own-ratio([^"]*)">([^<]+)<\/strong>/g)];
+    assert.deepEqual(cells.map(cell => cell[1].includes("shareholder-own-ratio-highlight")), [true, true, true, false, false, false, false], `${tab} uses the original ratio and includes exactly five percent`);
+    assert.equal(cells[3][2], "5.00%", "rounding a smaller ratio for display does not qualify it for highlighting");
+  }
+  context.state.shareholderTab = "holders";
   context.switchShareholderTab("float");
   assert.equal(pending.length,readsBeforeTabs,"both shareholder tabs reuse the fetched stock data");
   assert.ok(tooltip.innerHTML.includes("报告期 2026-06-30")&&!tooltip.innerHTML.includes("报告期 2026-09-30"));

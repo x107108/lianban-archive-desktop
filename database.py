@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 from pypinyin import Style, lazy_pinyin
 
-from relationships import stock_relationships, stock_pair_comparison
+from relationships import stock_relationships, stock_pair_comparison, confirmed_suspensions, observed_runs
 from provinces import normalize_province
 from shareholder_types import classify_holder
 
@@ -62,6 +62,10 @@ def connect(path=DEFAULT_DB):
             PRIMARY KEY (date, code)
         );
         CREATE INDEX IF NOT EXISTS events_code_date ON events(code, date);
+        CREATE TABLE IF NOT EXISTS convertible_bonds (
+            bond_code TEXT PRIMARY KEY, stock_code TEXT NOT NULL, name TEXT NOT NULL,
+            listed TEXT, delisted TEXT, expires TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS stock_industries (
             code TEXT PRIMARY KEY, industry TEXT NOT NULL,
             industry_level2 TEXT NOT NULL, industry_level3 TEXT NOT NULL,
@@ -146,6 +150,15 @@ def connect(path=DEFAULT_DB):
             date TEXT NOT NULL, code TEXT NOT NULL, name TEXT NOT NULL,
             start TEXT NOT NULL, end TEXT, resume TEXT, reason TEXT NOT NULL,
             full_day INTEGER NOT NULL, PRIMARY KEY(date,code)
+        );
+        CREATE TABLE IF NOT EXISTS verified_suspension_days (
+            date TEXT NOT NULL, code TEXT NOT NULL, source TEXT NOT NULL,
+            checked_at TEXT NOT NULL, PRIMARY KEY(date,code)
+        );
+        CREATE TABLE IF NOT EXISTS suspension_gap_checks (
+            code TEXT NOT NULL, previous_date TEXT NOT NULL, next_date TEXT NOT NULL,
+            status TEXT NOT NULL, checked_at TEXT NOT NULL, raw_paths TEXT NOT NULL,
+            error TEXT, PRIMARY KEY(code,previous_date,next_date)
         );
     """)
     for table, columns in (("stock_shareholders", {"holding_ratio": "REAL", "holding_shares": "INTEGER"}),
@@ -430,10 +443,18 @@ def tag_alias_revision(conn):
     return get_settings(conn).get("tag_alias_revision", 0)
 
 
-def enrich_industries(conn, rows):
+def enrich_industries(conn, rows, *, as_of=None):
     codes = list({row["code"] for row in rows})
     if not codes:
         return rows
+    bonds = {}
+    for bond in conn.execute("SELECT stock_code,listed,delisted,expires FROM convertible_bonds WHERE stock_code IN (" + ",".join("?" for _ in codes) + ")", codes):
+        bonds.setdefault(bond["stock_code"], []).append(bond)
+    today = datetime.now(TZ).date().isoformat()
+    for row in rows:
+        day = as_of or row.get("date") or today
+        row["has_convertible_bond"] = any(bond["listed"] and bond["listed"] <= day < min(bond["delisted"] or bond["expires"], bond["expires"])
+                                           for bond in bonds.get(row["code"], []))
     industries = {r["code"]: dict(r) for r in conn.execute(
         "SELECT * FROM stock_industries WHERE code IN (" + ",".join("?" for _ in codes) + ")", codes)}
     for row in rows:
@@ -829,7 +850,7 @@ def date_view(conn, day, min_boards=1, market="all", query="", exclude_st=False,
     if snapshot:
         coverage = {"status": "provisional", "source": snapshot["source"], "note": snapshot["note"]}
         rows = sorted((dict(r) for r in snapshot["records"]), key=lambda r: (-r["boards"], r["code"]))
-    enrich_industries(conn, rows)
+    enrich_industries(conn, rows, as_of=day)
     rows = [r for r in rows if (market == "all" or r["market"] == market)
             and (not query or query.casefold() in (r["code"] + r["name"]).casefold())
             and (not exclude_st or not is_st_name(r["name"]))
@@ -925,37 +946,32 @@ def stock_view(conn, code, start, end):
     available_dates = [r[0] for r in conn.execute("SELECT date FROM days WHERE status='ok' ORDER BY date")]
     # A never-fetched trading day is a gap too. Use the provider calendar when available.
     all_dates = sorted(set(settings.get("calendar_dates", []) + available_dates))
-    indices = {day: i for i, day in enumerate(all_dates)}
+    suspended = confirmed_suspensions(conn, [code], end).get(code, set())
     attempted = {r["date"]: r["status"] for r in conn.execute("SELECT date,status FROM days")}
-    cycles = []
-    for row in all_rows:
-        previous = cycles[-1] if cycles else None
-        can_join = bool(previous and row["boards"] == previous["boards"] + 1
-                        and indices.get(row["date"], -100) == indices.get(previous["end"], 100) + 1
-                        and not any(status != "ok" and previous["end"] < d < row["date"] for d, status in attempted.items()))
-        if can_join:
-            previous.update(end=row["date"], boards=row["boards"])
-            previous["dates"].append(row["date"])
-        else:
-            cycles.append({"start": row["date"], "end": row["date"], "boards": row["boards"],
-                           "dates": [row["date"]], "start_known": row["boards"] == 1})
+    cycles = [{"start": run["dates"][0]["date"], "end": run["dates"][-1]["date"],
+               "boards": run["boards"], "dates": [r["date"] for r in run["dates"]],
+               "start_known": run["start_known"], "suspension_dates": run["suspension_dates"]}
+              for run in observed_runs(all_rows, all_dates, attempted, {code: suspended})]
     selected_dates = [d for d in all_dates if d <= end]
     selected_available = [d for d in available_dates if d <= end]
     latest = selected_available[-1] if selected_available else None
+    latest_traded = next((d for d in reversed(selected_available) if d not in suspended), None)
     row_by_date = {r["date"]: r for r in all_rows}
     visible_cycles = []
     for cycle in cycles:
         if cycle["end"] < start or cycle["start"] > end:
             continue
-        cycle["ongoing"] = cycle["end"] == latest
-        later = [d for d in selected_dates if d > cycle["end"]]
+        cycle["ongoing"] = cycle["end"] == latest_traded
+        later = [d for d in selected_dates if d > cycle["end"] and d not in suspended]
         next_day = later[0] if later else None
-        gap = next_day and (attempted.get(next_day) != "ok" or any(status != "ok" and cycle["end"] < d <= next_day for d, status in attempted.items()))
+        gap = next_day and (attempted.get(next_day) != "ok" or any(status != "ok" and d not in suspended and cycle["end"] < d <= next_day for d, status in attempted.items()))
         next_row = row_by_date.get(next_day)
         cycle["end_known"] = bool(next_day and not gap and (next_row is None or next_row["boards"] == 1))
         cycle["clipped"] = cycle["start"] < start or cycle["end"] > end or not cycle["start_known"]
         if cycle["clipped"]:
             cycle["note"] = "含查询区间外记录，或首板日期未收录；该周期可能不完整。"
+        if cycle.get("suspension_dates"):
+            cycle["note"] = cycle.get("note", "") + "停牌期间不计涨停天数，复牌后连续涨停计入同一周期。"
         visible_cycles.append(cycle)
     rows = [r for r in all_rows if start <= r["date"] <= end]
     note = settings["scope_note"] + " 个股列表仅显示已收录的涨停日；空白不代表断板。"
@@ -976,6 +992,6 @@ def stock_view(conn, code, start, end):
         peer.update(profiles[peer["code"]])
         peer["initials"] = stock_initials(peer["name"])
     return {"stock": stock, "range_start": start, "range_end": end, "as_of_date": latest,
-            "stats": {"limit_days": len(rows), "max_boards": max((r["boards"] for r in rows), default=0), "cycles": len(visible_cycles)},
+            "stats": {"limit_days": len(rows), "max_boards": max((cycle["boards"] for cycle in visible_cycles), default=0), "cycles": len(visible_cycles)},
             "cycles": list(reversed(visible_cycles)), "rows": list(reversed(rows)), "coverage_note": note,
             "relationships": relations}

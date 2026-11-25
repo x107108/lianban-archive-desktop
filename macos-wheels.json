@@ -1,0 +1,26 @@
+{
+  "arm64": [
+    {
+      "url": "https://files.pythonhosted.org/packages/95/c0/6f818fd16987eba5ad77fcf8ba8a19e9cf19fad7df7f38ed61b933196d97/pandas-3.1.1-cp313-cp313-macosx_11_0_arm64.whl",
+      "file": "vendor/wheels/pandas-3.1.1-cp313-cp313-macosx_11_0_arm64.whl",
+      "sha256": "269716b079899a92953837d13ed215ef2d36dbf8dd3787faf617f1160a2f5062"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/83/8c/b0ea9477fb1f0d4484bbc5cba21678cc9969704d8d7f3f158d1db35f8e14/numpy-2.5.4-cp313-cp313-macosx_11_0_arm64.whl",
+      "file": "vendor/wheels/numpy-2.5.4-cp313-cp313-macosx_11_0_arm64.whl",
+      "sha256": "7415db95818b39ec475a5eea54d9e3b6bc83e3912158e46da3438cdce399804d"
+    }
+  ],
+  "x86_64": [
+    {
+      "url": "https://files.pythonhosted.org/packages/f6/ee/2f6c4419fa2bf476ba2776c0fbae91e8bf6ab15c6b3e038d66da4d7824da/pandas-3.1.1-cp313-cp313-macosx_10_13_x86_64.whl",
+      "file": "vendor/wheels/pandas-3.1.1-cp313-cp313-macosx_10_13_x86_64.whl",
+      "sha256": "01bd1d4c5fc999324382d55499cef0f9cc7c1b09d91ae6dabe82f0237e43b3a0"
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/67/14/1c3ee0118a8fce08565a5d8482631608426a33af10a01077fada5dc7c119/numpy-2.5.4-cp313-cp313-macosx_10_13_x86_64.whl",
+      "file": "vendor/wheels/numpy-2.5.4-cp313-cp313-macosx_10_13_x86_64.whl",
+      "sha256": "2377da2dd3ba2c1200956acbab2a358c83b8e1f8531191672d1cd6ad83250d53"
+    }
+  ]
+}

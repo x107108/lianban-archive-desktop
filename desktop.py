@@ -12,6 +12,7 @@ import threading
 from urllib.parse import urlsplit
 from http.server import SimpleHTTPRequestHandler
 from update_notices import NoticeService
+from shared_announcements import AnnouncementService
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
@@ -24,6 +25,8 @@ def serve(port, no_updates=False):
     published_tags.initialize_catalog(ROOT/'data/archive.sqlite3')
     import shareholder_seed
     shareholder_seed.apply(ROOT/'data/archive.sqlite3')
+    import suspension_seed
+    suspension_seed.apply(ROOT/'data/archive.sqlite3')
     import seven_seed
     seven_seed.apply(ROOT/'data/archive.sqlite3')
     session_file = ROOT/'data/desktop-session.json'
@@ -34,6 +37,8 @@ def serve(port, no_updates=False):
     version = json.loads((ROOT/'VERSION.json').read_text(encoding='utf-8'))['version']
     notices = NoticeService(version, ROOT/'data/update-notice-cache.json')
     notices.refresh()
+    announcements = AnnouncementService(ROOT/"data/shared-announcements.json")
+    announcements.refresh()
 
     class DesktopHandler(original_handler):
         def send_head(self):
@@ -59,6 +64,8 @@ def serve(port, no_updates=False):
 
         def do_GET(self):
             parsed = urlsplit(self.path)
+            if parsed.path == '/api/announcement':
+                return self.reply(announcements.snapshot())
             if parsed.path == '/__desktop__/updates':
                 return self.reply(notices.snapshot(force=parsed.query == 'check=1'))
             if parsed.path == '/__desktop__/status':
@@ -68,6 +75,11 @@ def serve(port, no_updates=False):
             return super().do_GET()
 
         def do_POST(self):
+            if urlsplit(self.path).path == '/api/announcement/popup':
+                if self.headers.get('Origin') != 'http://' + self.headers.get('Host', ''):
+                    return self.reply({'error': '请在本共享版页面操作。'}, 403)
+                return self.reply(announcements.snapshot(claim=True))
+
             if urlsplit(self.path).path in ('/__desktop__/personal-data/preview', '/__desktop__/personal-data/import'):
                 import personal_data
                 if self.headers.get('Content-Type', '').split(';')[0].strip() != 'application/json':
@@ -100,6 +112,8 @@ def serve(port, no_updates=False):
         def maybe_refresh(self, *args, **kwargs): pass
         def start(self): pass
         def stop(self): pass
+        def maybe_refresh_cycles(self, *args): return False
+        cycles_updating = False
     # Published labels remain the default; provider refreshes cannot replace them.
     app.concept_tags.Refresher = OfflineRefresher
     if no_updates:
@@ -110,6 +124,7 @@ def serve(port, no_updates=False):
         app.live_pool.Refresher = OfflineRefresher
         app.shareholders.Refresher = OfflineRefresher
         app.control_owners.Refresher = OfflineRefresher
+        app.convertible_bonds.refresh = lambda *args, **kwargs: None
     sys.argv = [str(ROOT/'app.py'), '--port', str(port), '--db', str(ROOT/'data/archive.sqlite3')]
     session['state'] = 'running'
     session_file.write_text(json.dumps(session), encoding='utf-8')

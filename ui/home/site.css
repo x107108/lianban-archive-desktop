@@ -37,7 +37,7 @@
   .back-to-top:hover { color: var(--color-accent-700); background: var(--color-accent-50); border-color: var(--color-accent-200); }
 
   /* Individual stock history, competitors and cycle cards. */
-  :scope:has(#date-view[hidden]) .query-panel-heading { display: none; }
+  :scope:has(#date-view[hidden]) #search-workspace > .query-panel-heading { display: none; }
   #stock-summary { margin-top: 16px; padding: 20px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
   #stock-summary .stock-title-row { margin-top: 0; margin-bottom: 12px; gap: 16px; }
   .stock-identity h3 { @apply text-title-1-semibold; }
@@ -118,12 +118,14 @@
   .cycle-card { border-radius: 16px; padding: 20px; background: var(--surface); border-color: var(--line); }
   .cycle-date, .cycle-status, .cycle-height-label, .cycle-scope-note { color: var(--color-text-secondary); }
   .cycle-card button { color: var(--color-accent-700); }
+  .cycle-card .cycle-day-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 36px; min-height: 36px; margin: 12px 0 16px; padding: 0 12px; border: 1px solid var(--color-border-button-default); border-radius: 10px; background: var(--surface); color: var(--color-text-primary); box-shadow: var(--shadow-xs); @apply text-body-2-semibold; }
+  .cycle-card .cycle-day-button > svg { width: 16px; height: 16px; flex: none; color: var(--color-accent-600); }
+  .cycle-card .cycle-day-button:hover:not(:disabled) { background: var(--color-background-primary-hover); border-color: var(--color-border-button-hover); color: var(--color-text-primary); }
+  .cycle-card .cycle-day-button:active:not(:disabled) { background: var(--color-background-primary-active); box-shadow: none; }
   .stock-chart svg text { fill: var(--color-text-secondary); }
   .stock-chart svg .grid-line { stroke: var(--color-separator-border); }
 
   /* Intraday list and chart geometry stay intact; only the chrome changes. */
-  .minute-toolbar { margin-top: 20px; padding: 20px 24px; }
-  .minute-toolbar .button { height: 40px; min-height: 40px; }
   .minute-scope, .minute-coverage, .minute-date-field > label, .minute-data-note { color: var(--color-text-secondary); }
   .minute-stock-panel, .minute-chart-panel { border-radius: 20px; }
   .minute-list-heading { padding: 20px 16px; border-color: var(--line); }
@@ -134,10 +136,10 @@
   .minute-compare-filter p { color: var(--color-text-secondary); }
   .minute-stock-row { border-radius: 10px; border-color: transparent; }
   .minute-stock-row:hover { background: var(--color-background-secondary-default); }
-  .minute-stock-row.selected, .minute-stock-row:has(input:checked) { background: var(--color-accent-50); border-color: var(--color-accent-200); }
+  .minute-stock-row.selected, .minute-stock-row:has(input:checked) { background: color-mix(in srgb, var(--compare-color) 7%, var(--surface)); border-color: color-mix(in srgb, var(--compare-color) 70%, var(--surface)); }
   .minute-stock-row-name { color: var(--color-text-primary); }
   .minute-stock-row-name small { color: var(--color-text-secondary); }
-  .minute-stock-row input { accent-color: var(--color-accent-600); }
+  .minute-stock-row input { accent-color: var(--compare-color); }
   .minute-chart-heading { padding: 24px 24px 0; }
   .minute-chart-identity h2 { @apply text-title-1-semibold; }
   .minute-profile-meta, .minute-chart-heading p, .minute-hover, .minute-chart-legend { color: var(--color-text-secondary); }
@@ -219,6 +221,7 @@
   .shareholder-together { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 6px; color: var(--color-text-white); background: var(--color-notification-error-foreground); @apply text-caption-2-semibold; }
   .shareholder-own-summary { border-radius: 12px; }
   .shareholder-own-summary span, .shareholder-own-summary > strong { color: var(--color-accent-700); }
+  .shareholder-own-ratio-highlight { color: var(--color-accent-700); }
   .shareholder-message, .shareholder-meta, .shareholder-heading > span, .shareholder-own-heading > span, .stock-note-tooltip-entry time, .stock-note-help { color: var(--color-text-secondary); }
   .shareholder-more { background: var(--color-background-secondary-default); color: var(--color-accent-700); border-color: var(--line); }
   .stock-note-node { border-color: var(--line); border-radius: 12px; background: var(--surface); }

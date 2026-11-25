@@ -1,5 +1,6 @@
 """Read-only, reproducible observations from the closing pool and minute cache."""
 from contextlib import closing
+from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 import json
 import math
@@ -21,24 +22,40 @@ def cached_seal_times(archive_path, day):
     with closing(sqlite3.connect(path)) as conn:
         if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='seal_times'").fetchone():
             return None
-        row = conn.execute("SELECT stocks_json,source FROM seal_times WHERE date=?", (day,)).fetchone()
-    return {"stocks": json.loads(row[0]), "source": row[1]} if row else None
+        row = conn.execute("SELECT stocks_json,source,fetched_at FROM seal_times WHERE date=?", (day,)).fetchone()
+    return {"stocks": json.loads(row[0]), "source": row[1], "fetched_at": row[2]} if row else None
 
 
 def collect_seal_times(archive_path, day, *, force=False):
-    """Cache independently validated source clocks without replacing closing-pool facts."""
+    """Supplement source clocks for confirmed and provisional pools."""
     intraday.validate_day(day)
+    now = datetime.now(db.TZ)
+    today = day == now.date().isoformat()
     with closing(db.connect(archive_path)) as conn:
-        if not conn.execute("SELECT 1 FROM days WHERE date=? AND status='ok'", (day,)).fetchone():
-            raise ValueError("该日尚无已确认的涨停池")
+        if not conn.execute("SELECT 1 FROM days WHERE date=? AND status='ok'", (day,)).fetchone() and not live_pool.snapshot(conn, day):
+            raise ValueError("该日尚无已确认或盘中暂定的涨停池")
     cached = cached_seal_times(archive_path, day)
-    if cached and not force:
+    if cached and not force and (not today or now - datetime.fromisoformat(cached["fetched_at"]) < timedelta(seconds=55)):
         return {"date": day, "count": len(cached["stocks"]), "cached": True}
     import provider
-    result = provider._historical_day(day, provider.RAW_DIR)
+    raw_dir = intraday.store_path(archive_path).parent / "raw"
+    if today:
+        response = provider._get(provider.POOL_URL, {"pool_name": "limit_up"}, attempts=1)
+        raw_path = provider._save_raw(f"xgb_clocks_{day}", response, raw_dir)
+        records, note = provider.normalize_pool(response.json(), day)
+        result = provider.DayResult(day, records, "ok" if records else "empty", note, raw_path)
+    else:
+        result = provider._historical_day(day, raw_dir)
     if result.status != "ok" or not result.records:
         raise ValueError("该日来源暂未提供可核验的秒级封板时间")
-    stocks = {row["code"]: {key: row.get(key) for key in ("close", "first_time", "last_time")} for row in result.records}
+    stocks = dict(cached["stocks"]) if cached else {}
+    for row in result.records:
+        previous = stocks.get(row["code"])
+        clocks = {key: row.get(key) for key in ("close", "first_time", "last_time")}
+        if previous and previous["close"] == clocks["close"]:
+            for field in ("first_time", "last_time"):
+                clocks[field] = clocks[field] or previous.get(field)
+        stocks[row["code"]] = clocks
     with closing(intraday.connect(intraday.store_path(archive_path))) as conn, conn:
         conn.execute("INSERT INTO seal_times VALUES (?,?,?,?,?) ON CONFLICT(date) DO UPDATE SET stocks_json=excluded.stocks_json,source=excluded.source,fetched_at=excluded.fetched_at,raw_path=excluded.raw_path",
                      (day, json.dumps(stocks), result.source, db.now_iso(), result.raw_path))
@@ -266,13 +283,14 @@ def timeline(archive_path, day, window=2, multiple=10, *, exclude_gem=True, incl
                 if (intraday.is_mainboard(r["code"]) or not exclude_gem and db.market_for(r["code"]) == "创业板")
                 and not db.is_st_name(r["name"]) and r["code"] not in excluded]
         db.enrich_industries(conn, pool)
-    time_coverage = {"cached": False, "missing": sum(not r.get("first_time") for r in pool)} if snapshot else enrich_seal_times(archive_path, day, pool)
+    time_coverage = enrich_seal_times(archive_path, day, pool)
     if snapshot:
         for stock in pool:
-            stock["clock_source"] = "盘中暂定池"
+            stock.setdefault("clock_source", "盘中暂定池")
     sessions, errors = intraday._cached(archive_path, day=day, detail=True)
     events, jobs, analyzed, partial = [], [], 0, 0
     for stock in pool:
+        stock["initials"] = db.stock_initials(stock["name"])
         cached = sessions.get((day, stock["code"]))
         points = json.loads(cached["points_json"]) if cached else []
         auction = intraday.auction_view(archive_path, day, stock["code"]) if points else {}

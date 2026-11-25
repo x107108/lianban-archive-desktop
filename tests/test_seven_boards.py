@@ -1,4 +1,5 @@
 from contextlib import closing
+from datetime import datetime
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,10 +10,41 @@ from uuid import uuid4
 import app
 import database as db
 import intraday
-from seven_boards import BROKEN_POOL_SOURCE, archive_runs, checked_prices
+from seven_boards import BROKEN_POOL_SOURCE, archive_runs, checked_openings, checked_prices
 
 
 class SevenBoardTests(unittest.TestCase):
+    def test_verified_open_is_separate_from_minute_cache_and_incompatible_prices_are_ignored(self):
+        path = Path(__file__).parent / "test-data" / ("seven-" + uuid4().hex) / "archive.sqlite3"
+        day = {"date": "2026-09-04", "code": "605577", "name": "龙版传媒", "boards": 7,
+               "close": 15.55, "pct_change": (15.55 / 14.14 - 1) * 100}
+        points = [[1, 15.5]] + [[slot, 15.55] for slot in range(2, 241)]
+        with closing(db.connect(path)) as archive:
+            db.save_day(archive, day["date"], [day], "synthetic")
+        bar = SimpleNamespace(time=datetime.fromisoformat("2026-09-04T15:00:00+08:00"), open=14.22,
+                              high=15.55, low=14.22, close=15.55, last_close_price_milli=14140, volume_wire_value=100)
+        series = SimpleNamespace(code="605577", period_name="day", adjust_mode="none", bars=[bar])
+        expected = {**day, "previous_close": 14.14, "points": points}
+        rows = checked_openings(series, [expected])
+        self.assertEqual(rows[0][:5], ("2026-09-04", "605577", 14.22, 14.14, 15.55))
+        with closing(intraday.connect(intraday.store_path(path))) as cache, cache:
+            cache.execute("INSERT INTO seven_minutes VALUES (?,?,?,?,?)", checked_prices(day, points, 1))
+            cache.executemany("INSERT INTO seven_openings VALUES (?,?,?,?,?,?,?)", rows)
+        server = SimpleNamespace(db_path=path)
+        with patch("requests.get", side_effect=AssertionError("reads stay offline")):
+            shown = app.read_api(server, "/api/seven-boards")["rows"][0]["days"][6]
+        self.assertEqual((shown["open_price"], shown["points"][0]), (14.22, [1, 15.5]))
+        self.assertIn("日行情", shown["opening_source"])
+        with closing(intraday.connect(intraday.store_path(path))) as cache, cache:
+            cache.execute("UPDATE seven_openings SET previous_close=10")
+        self.assertNotIn("open_price", app.read_api(server, "/api/seven-boards")["rows"][0]["days"][6])
+        self.assertEqual(checked_openings(series, [{**expected, "previous_close": 10}]), [])
+        self.assertEqual(checked_openings(series, [{**expected, "date": "2026-09-03"}]), [])
+        self.assertEqual(checked_openings(series, [{**expected, "points": [[240, 10]]}]), [])
+        series.adjust_mode = "forward"
+        with self.assertRaisesRegex(ValueError, "复权"):
+            checked_openings(series, [expected])
+
     def test_confirmed_close_and_next_trading_day_break_use_separate_evidence(self):
         path = Path(__file__).parent / "test-data" / ("seven-" + uuid4().hex) / "archive.sqlite3"
         dates = ["2026-10-" + str(day) for day in (19, 20, 21, 22, 23, 26, 27, 28, 29)]
