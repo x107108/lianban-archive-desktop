@@ -19,6 +19,10 @@ def apply(path, resource=RESOURCE):
             return
         seed = json.loads(gzip.decompress(raw))
         conn.executemany(
+            "INSERT INTO seal_times VALUES (?,?,?,?,'') ON CONFLICT(date) DO UPDATE SET "
+            "stocks_json=excluded.stocks_json,source=excluded.source,fetched_at=excluded.fetched_at,raw_path='' "
+            "WHERE seal_times.fetched_at<excluded.fetched_at", seed.get("seal_times", []))
+        conn.executemany(
             "INSERT INTO seven_minutes VALUES (?,?,?,?,?) ON CONFLICT(date,code) DO UPDATE SET "
             "previous_close=excluded.previous_close,points_json=excluded.points_json,interval=excluded.interval "
             "WHERE excluded.interval < seven_minutes.interval", seed["minutes"])

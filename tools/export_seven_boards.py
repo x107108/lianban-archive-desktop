@@ -11,6 +11,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from seven_boards import BROKEN_POOL_SOURCE, archive_runs
 
 
+def export_clocks(source, resource):
+    """Add only dated public price/seal fields to the existing verified price seed."""
+    import database as db
+    seed = json.loads(gzip.decompress(resource.read_bytes()))
+    with closing(sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True)) as cache:
+        rows = cache.execute("SELECT date,stocks_json,source,fetched_at FROM seal_times WHERE date<? ORDER BY date",
+                             (db.now_iso()[:10],)).fetchall()
+    seed["seal_times"] = [(day, json.dumps({code: {key: item.get(key) for key in ("close", "first_time", "last_time")}
+        for code, item in json.loads(stocks).items()}, separators=(",", ":")), origin, stamp)
+        for day, stocks, origin, stamp in rows if origin == "选股宝公开涨停池"]
+    resource.write_bytes(gzip.compress(json.dumps(seed, ensure_ascii=False, separators=(",", ":")).encode(), mtime=0))
+    print(json.dumps({"public_seal_dates": len(seed["seal_times"]), "personal_fields": False}))
+
+
 def export(source, output, baostock_dir=None):
     recovered = {}
     if baostock_dir:

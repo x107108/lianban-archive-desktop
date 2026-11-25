@@ -1,5 +1,5 @@
 {
-  "id": "0b5a2700f0ad8792",
+  "id": "b2662ab1874ab35f",
   "runtime": "vendor/python-3.13.16-embed-amd64.zip",
   "wheels": [
     "vendor/wheels/baostock-0.9.2-py3-none-any.whl",
@@ -75,12 +75,12 @@
     "resources/archive-seed.sqlite3.json": "21c007dac3dae96ee57ad94678318cf226e21b8eeb78d903713d35437c27a242",
     "resources/mainboard-catalog.json": "94d4d919d962a8b4618d020d26cdd7ca17c1302204ca0ef857e11536e32bc05f",
     "resources/published-tags.json": "1a2e05d842fee61a9ebae0c9213dc20893006165be833982f5dfaf46d4e0bd2e",
-    "resources/seven-boards.json.gz": "9eac7e54136f7fc347e1cd0c12a0142dc12a5a7961b20ebcc056ffcdd8f82e74",
+    "resources/seven-boards.json.gz": "a8d7966a3a5e012e21779148feb478b8e50fb802eb8d45f452ee547f1ea02fb4",
     "resources/shareholders.json.gz": "c64d60acc60429690c0c0054aa66390c385ba2789a4388588b4492bd7e510cd7",
     "resources/suspensions.json.gz": "3fdb68ba62245070d25cb8302444e590c7117ac85e64dd013dac2c6ab5a164ec",
     "setup_shared.py": "b2b1282f130cf635b21d1b309397de6e31e1934948c08c49dd9ec9b915193f12",
     "seven_boards.py": "bb7b15edb182d64dadd24c00471febde8ca0fd5ae4100c1935a694205a90786c",
-    "seven_seed.py": "86217c4df6b5bfb74cad431d2537738b08ee4366fc5b1a3d7fc3f1f59a75e602",
+    "seven_seed.py": "b76018b4e67a544af4d852d490f63505597d5061f5c90029624fb817bcef62f1",
     "shared_announcements.py": "c775cdec1f04548ed0d2feb925d35c3cbcc3c4538b36ab35cd47a69d5055ff06",
     "shareholder_seed.py": "6ef2189563f4f31bb2a0d2e17d6052f9b709c2da851defca5e692aec26f8c7d9",
     "shareholder_types.py": "817773141ea0041008c5e8c3dc690a77ddc64bf61f87f328b0172c36159bddcf",
