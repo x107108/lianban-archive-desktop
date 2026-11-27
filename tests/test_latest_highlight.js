@@ -165,10 +165,10 @@ assert.equal(context.setRelationSort("__proto__"),false);
 assert.equal(context.state.relationSort,validSortBefore,"invalid sort keys cannot change current ordering");
 context.state.relationQuery = "";
 const filterFixtures = [
-  {code:"600001",name:"普通主板",winCount:1,lossCount:0,commonCount:2,lastDate:"2026-07-01"},
+  {code:"600001",name:"普通主板",initials:"PTZB",winCount:1,lossCount:0,commonCount:2,lastDate:"2026-07-01"},
   {code:"600002",name:"* ST 样本",winCount:1,lossCount:0,commonCount:2,lastDate:"2026-07-01"},
-  {code:"300001",name:"创业板甲",winCount:1,lossCount:0,commonCount:2,lastDate:"2026-07-01"},
-  {code:"301001",name:"创业板乙",winCount:1,lossCount:0,commonCount:2,lastDate:"2026-07-01"},
+  {code:"300001",name:"创业板甲",initials:"CYBJ",winCount:1,lossCount:0,commonCount:2,lastDate:"2026-07-01"},
+  {code:"301001",name:"创业板乙",initials:"cyby",winCount:1,lossCount:0,commonCount:2,lastDate:"2026-07-01"},
   {code:"688001",name:"科创样本",winCount:1,lossCount:0,commonCount:2,lastDate:"2026-07-01"},
   {code:"000003",name:"st退样本",winCount:1,lossCount:0,commonCount:2,lastDate:"2026-07-01"}
 ];
@@ -182,6 +182,16 @@ for (const [st,gem,expected] of [[false,false,6],[true,false,4],[false,true,4],[
 assert.ok(context.filteredRelationPeers().some(peer=>peer.code==="688001"),"GEM filtering keeps STAR stocks");
 context.state.relationQuery="创业板";
 assert.equal(context.filteredRelationPeers().length,0,"name filtering cannot reintroduce excluded stocks");
+context.state.relationQuery="cyb";
+assert.equal(context.filteredRelationPeers().length,0,"initials filtering cannot reintroduce excluded stocks either");
+Object.assign(context.state,{relationExcludeST:false,relationExcludeGEM:false});
+for (const [query, codes] of [["ptzb",["600001"]], [" PTZ ",["600001"]], ["普通",["600001"]],
+  ["600001",["600001"]], ["CyB",["300001","301001"]], ["undefined",[]]]) {
+  context.state.relationQuery=query;
+  assert.deepEqual(Array.from(context.filteredRelationPeers(),peer=>peer.code),codes,
+    "peer searches support case-insensitive full/partial initials, trimmed input, existing names/codes and missing initials");
+}
+Object.assign(context.state,{relationExcludeST:true,relationExcludeGEM:true});
 context.state.relationQuery="";
 context.state.relationPeerCode="600002";
 context.renderComparisonWorkspace();

@@ -25,6 +25,8 @@ def classify_holder(holder_key, source_type):
         return "香港中央结算有限公司"
     if holder_key in HUIJIN_NAMES:
         return "中央汇金"
+    if holder_key == "中国国际金融香港资产管理有限公司-ciccft3(r)":
+        return "中金香港资管账户"
     if holder_key in AMC_NAMES or (holder_key.endswith("分公司") and any(
             holder_key.startswith(name) and re.fullmatch(r"[\u4e00-\u9fff]+分公司", holder_key[len(name):])
             for name in AMC_NAMES)):

@@ -1,7 +1,7 @@
 {
   "project": "lianban-archive-desktop",
-  "source_commit": "f85b955256da5fe9c1c2b08cd14b15bf49bca770",
-  "source_date": "2026-11-25",
+  "source_commit": "c19e199e3ccc197cfc4affa7726db4402202c3ee",
+  "source_date": "2026-11-26",
   "identity_sha256": {
     "app.py": "a9157ef4f607d822e832f9111f7158998a3bc8f26ea8b0c9a41fe417d732adf1",
     "app_version.py": "b96cf7196fe2080507bfb3d492c57e27b2cbffdc4edd2a2fa0a634dbdf5c6ef8",
@@ -26,23 +26,23 @@
     "registration.py": "83925eb8edc0a3abdc63ece99290df59df3f56a31d8e1a95516d9f71f87f73f0",
     "relationships.py": "9d9e094f392b3174475f1fa82c56197d15f57ed158d2947f39f0668d25ee46e7",
     "seven_boards.py": "bb7b15edb182d64dadd24c00471febde8ca0fd5ae4100c1935a694205a90786c",
-    "shareholder_types.py": "817773141ea0041008c5e8c3dc690a77ddc64bf61f87f328b0172c36159bddcf",
+    "shareholder_types.py": "b8f4621ec7e49143c5366baa0f67114bb0dd156f601e0f3d76ede21478e56d20",
     "shareholders.py": "4c396a03f25d061eadca9711932a94696a47e16bddb1a66a74086b65e643211e",
     "subsidiaries.py": "23eacb6d2be339429512b88fdd96fa2ed5abca5c24ceeb1ba374b89a70488514",
     "suspension.py": "1187b5b08c5e2b59069b6db2bf9db6d64a0cbfec738eb695d7d7d7bcc23b3128",
     "suspension_history.py": "1851263155c7c82264d97c92fa26067dac8a793134b709c322e08ad998ba5660",
     "sync_data.py": "580744d67624b4f0e129c60d448a02739ce68ab4bf5488f6ef0f0964ca8f9f5d",
     "tag_management.py": "673575572db792b81d56df29e957f98496b97d45d1a98f7e25fd801995794114",
-    "web/app.js": "8c9b88bc90ee46d3a5345e347c60cc506acda6358b18e897437f8711983baf7f",
+    "web/app.js": "e6a19d9e3ab59b5a6e5024dc9751b2d5243802bf083a401368cb411e52dbd235",
     "web/boardui-home.css": "dc105fd5921fc9183c467fd0484d86131ff06f950ccf188f72f16d545f11fa32",
     "web/fonts/NotoSansSC-VF.woff2": "7fabc1ef45ba1bd4d8dea904f51f408cfb515cf56c5ad813836df34c01171159",
     "web/fonts/OFL.txt": "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9",
     "web/fonts/SOURCE.md": "59c7342b9060486786ac37f018f9f20d7f6cbf6763aaad1fe439086c02f7503c",
     "web/images/title-companions.jpg": "c69048e24698593955967ee22f2982235ee2b0fec1df9c67940f27a34f79dc67",
-    "web/index.html": "858d393a221eb12c83db69d7e4c7b8e5d183826ff69514d2c5a26ebf1b13eb6d",
+    "web/index.html": "bf17939c8f9756253fdf8d26c96a1232c5b8209caaf6cef4841bc9cc2da9d897",
     "web/intraday-compare.css": "f5f8a6ce55419c7026f6e4e4a939e93094df864d814767b2f82f45fb8a8ca62b",
     "web/intraday-compare.js": "e829fcdc17012131274aecbf766d24bc730425e06f0c6bb43dde289105fa7ae6",
-    "web/styles.css": "04aa3d516bdd88468168a3895d8ace2f7a7c24484acd01765f0225ed7d15082f",
+    "web/styles.css": "f055ee63594edfa9df0e8b480396abd22c16408b65c270ee17d3366f13c08c08",
     "web/ui-theme.js": "fd95e6820a9aff191e9ccf2a518e26df5cb6a9b9f63402bc42a7e270892c76e5",
     "docs/FREE-FLOAT.md": "b07ffde19ccbb84e361709cc13ffa7f2152f4ffa08dec528ae4b3df428bbf78d"
   },
@@ -54,15 +54,15 @@
     "stock_note_entries",
     "stock_note_options"
   ],
-  "description": "Sync local v2026.11.25 functional improvements while preserving desktop install/update/personal-data behavior. Formal shared announcements and persistent query caching included.",
+  "description": "Sync the eight authorized local v2026.11.26.7 changes for shared v2026.11.27; preserve announcement delivery, personal data, public sources, installation and updates.",
   "published_tags_included": true,
   "authorized_adaptations": {
     "web/app.js": {
-      "source_sha256": "f466e9b020c86bd8b955cde6bb575ad6d226b3718ac6c1793aab392a257564c8",
+      "source_sha256": "e3ce780fe058cd569824b4870235b45ce4afd7de31924b53c1336902777bb344",
       "reason": "Preserve shared channel, formal announcements, existing personal-data/update behavior, and public data collectors."
     },
     "app_version.py": {
-      "source_sha256": "fa36e8df0bd8c11366b43c21c48a56cfd456cee9ec49c5abb1556a654f97d344",
+      "source_sha256": "07f52f4af54944ad6da3beb05db3f2609f29f93d3cd6374d1019f815b998276f",
       "reason": "Preserve shared channel, formal announcements, existing personal-data/update behavior, and public data collectors."
     },
     "docs/SHAREHOLDER-TYPES.md": {
@@ -71,7 +71,7 @@
     },
     "shareholder_types.py": {
       "reason": "Preserve shared channel, formal announcements, existing personal-data/update behavior, and public data collectors.",
-      "source_sha256": "4eb4ab64163cca2f3a2319cf4731898ebd357e9a2d4f69eb731e34d922b157ac"
+      "source_sha256": "abbad30fed7acf0b0c2df357b77c1ea824e17b8a30f711676af44519422b38e9"
     },
     "market_values.py": {
       "reason": "Use the same dated Tongdaxin free-float statistics as local test via the standard report-file protocol, without a restricted binary dependency.",
@@ -82,11 +82,11 @@
       "source_sha256": "56d2121ec742dfe929acae0e33fe37938c6f6db44672e3f2b612996f4a562e32"
     },
     "web/styles.css": {
-      "source_sha256": "6a2e5c400a7b5f013ebeb6d49a41b87af1900359f3dbe724b0b022d03bc99d49",
+      "source_sha256": "b229cd853e39b15c2a3a0d3aa160826d5771aa67bcadd129a4a7ca64d2cc07f9",
       "reason": "Preserve shared channel, formal announcements, existing personal-data/update behavior, and public data collectors."
     },
     "web/index.html": {
-      "source_sha256": "ad79fbf9e9360ce920312fa42b79ae289be80cf98bcc1b5701b7df5e20879344",
+      "source_sha256": "2c8d58b8a01fd06e909257392fa4f5d130b19781bf04697d0d3de0c462d6ac1b",
       "reason": "Preserve shared channel, formal announcements, existing personal-data/update behavior, and public data collectors."
     }
   }

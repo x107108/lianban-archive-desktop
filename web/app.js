@@ -122,7 +122,8 @@ function updateURL({replace = false} = {}) {
     if (state.intradayPane === "compare") params.set("minute_tab", "compare");
     if (state.intradayCode) params.set("minute_code", state.intradayCode);
     if (state.minuteCompareCodes?.length) params.set("minute_compare", state.minuteCompareCodes.join(","));
-    if (state.minuteMatchDate === queryDate && state.intradayCode) params.set("minute_match", "1");
+    if (state.minuteHiddenCodes?.size) params.set("minute_hidden", [...state.minuteHiddenCodes].join(","));
+    if (state.minuteMatchDate === queryDate && (state.intradayCode || state.minuteHiddenCodes?.size)) params.set("minute_match", "1");
     if ($("minute-timeline-exclude-gem").checked === false) params.set("timeline_gem", "1");
   }
   if (state.tab === "stock" && state.selectedStock) {
@@ -153,6 +154,7 @@ function setView(view, update = true) {
     if (view !== "tags") { state.requests["tag-members"]?.abort(); state.requests["tag-manager-search"]?.abort(); }
     if (view !== "intraday") {
       state.requests["intraday-stock"]?.abort();
+      state.requests["minute-tag-groups"]?.abort();
       if (typeof stopMinuteTimelineCollection === "function") stopMinuteTimelineCollection(false);
       Object.keys(state.requests).filter(channel => channel.startsWith("minute-compare-")).forEach(channel => state.requests[channel]?.abort());
     }
@@ -1564,10 +1566,10 @@ function mergeIdenticalFirstBoardGroups(ordered, tagBoards, separateLabel = null
   return columns;
 }
 
-function renderIndustryColumns(rows, dailyTagBoards = null, {highlightLatest = true} = {}) {
-  const regional = state.grouping === "region";
-  const phonetic = state.grouping === "pinyin";
-  const numeric = state.grouping === "code";
+function buildIndustryColumns(rows, dailyTagBoards, grouping = "industry") {
+  const regional = grouping === "region";
+  const phonetic = grouping === "pinyin";
+  const numeric = grouping === "code";
   const matchingMode = phonetic || numeric;
   const groupType = numeric ? "代码分组" : phonetic ? "拼音分组" : regional ? "地区" : "行业";
   const unknown = matchingMode ? "#" : regional ? "地区待补充" : "独苗";
@@ -1580,11 +1582,14 @@ function renderIndustryColumns(rows, dailyTagBoards = null, {highlightLatest = t
     let labels = numeric ? [codeDigits(row) || unknown] : phonetic ? [nameInitials(row) || unknown] : regional ? [regionLabel(row)] : [...new Set(allStockTags(row).map(tagRoot))];
     const solitary = !regional && !matchingMode && Number(row.boards) === 1 && labels.every(label => solitaryTags.has(label) && !tagHierarchy().parentKeys.has(label.toLocaleLowerCase()));
     if (solitary) labels = [unknown];
-    else if (!regional && !matchingMode && Number(row.boards) > 1) {
+    else if (!regional && !matchingMode && Number(row.boards) === 1) {
+      const shared = labels.filter(label => !solitaryTags.has(label));
+      if (shared.length) labels = shared;
+    } else if (!regional && !matchingMode && Number(row.boards) > 1) {
       const related = labels.filter(label => Object.entries(tagBoards[label] || {})
         .some(([height, count]) => Number(height) !== Number(row.boards) && Number(count) > 0));
-      const parents = labels.filter(label => tagHierarchy().parentKeys.has(label.toLocaleLowerCase()));
-      labels = [...new Set([...parents, ...(related.length ? related : labels.slice(0, 1))])];
+      // Parent sectors use the same cross-height rule as standalone concepts.
+      labels = related.length ? related : labels.slice(0, 1);
     }
     if (!regional && !matchingMode && !labels.length && Number(row.boards) > 1) {
       labels = [`暂无标签 · ${row.name || row.code}`];
@@ -1607,6 +1612,12 @@ function renderIndustryColumns(rows, dailyTagBoards = null, {highlightLatest = t
   });
   const columns = !regional && !matchingMode ? mergeIdenticalFirstBoardGroups(ordered, tagBoards, unknown)
     : ordered.map(([name, stocks]) => ({labels: [name], stocks}));
+  return {columns, groupCount: ordered.length, untagged, unknown, regional, numeric, matchingMode, groupType};
+}
+
+function renderIndustryColumns(rows, dailyTagBoards = null, {highlightLatest = true} = {}) {
+  const {columns, groupCount, untagged, unknown, regional, numeric, matchingMode, groupType} =
+    buildIndustryColumns(rows, dailyTagBoards, state.grouping);
   const seen = new Set();
   const repeated = columns.some(column => column.stocks.some(row => {
     if (seen.has(row.code)) return true;
@@ -1630,9 +1641,9 @@ function renderIndustryColumns(rows, dailyTagBoards = null, {highlightLatest = t
     return `<section class="board-height-section" data-board-height="${height}" aria-label="${label}，${total} 只股票"><header class="board-height-heading"><h4>${label}</h4><span>${total} 只股票</span></header><div class="board-matrix-row">${cells}</div></section>`;
   }).join("");
   const matchingHint = numeric ? "6 → 5 → 4 → 3 → 2 → 1 位连续数字匹配，同一股票可跨组展示" : "4 → 3 → 2 → 1 个连续字母匹配，同一股票可跨组展示";
-  const mergeHint = columns.length < ordered.length ? `<span class="multi-tag-note"> · 相同首板合并为 ${columns.length} 列</span>` : "";
+  const mergeHint = columns.length < groupCount ? `<span class="multi-tag-note"> · 相同首板合并为 ${columns.length} 列</span>` : "";
   const aboveHints = regional || matchingMode ? "" : `<div class="matrix-above-hints" role="group" aria-label="上方高位股票指引" hidden>${columns.map(({labels}, index) => `<button type="button" data-above-column="${index}" hidden><span class="matrix-above-label">↑ ${escapeHTML(labels.join(" / "))}</span><span class="matrix-above-count"></span></button>`).join("")}</div>`;
-  return `<div class="industry-board-summary"><span><strong>${ordered.length}</strong> 个${groupType} · <strong>${rows.length}</strong> 只股票${matchingMode ? `<span class="multi-tag-note"> · ${matchingHint}</span>` : repeated ? '<span class="multi-tag-note"> · 多标签跨列显示</span>' : ""}${mergeHint}${highlightLatest && rows[0]?.date !== state.meta?.latest_date ? latestPriorityNote(false) : ""}</span><div class="industry-board-controls"><span class="industry-scroll-hint">左右查看${groupType}</span><button type="button" class="icon-button" data-industry-scroll="-1" aria-label="查看左侧分组">←</button><button type="button" class="icon-button" data-industry-scroll="1" aria-label="查看右侧分组">→</button></div></div>${aboveHints}<div class="industry-board" role="region" aria-label="按${groupType}分列、按连板高度分行的股票" tabindex="0"><div class="board-comparison" style="--matrix-columns:${columns.length}">${sections}</div></div>`;
+  return `<div class="industry-board-summary"><span><strong>${groupCount}</strong> 个${groupType} · <strong>${rows.length}</strong> 只股票${matchingMode ? `<span class="multi-tag-note"> · ${matchingHint}</span>` : repeated ? '<span class="multi-tag-note"> · 多标签跨列显示</span>' : ""}${mergeHint}${highlightLatest && rows[0]?.date !== state.meta?.latest_date ? latestPriorityNote(false) : ""}</span><div class="industry-board-controls"><span class="industry-scroll-hint">左右查看${groupType}</span><button type="button" class="icon-button" data-industry-scroll="-1" aria-label="查看左侧分组">←</button><button type="button" class="icon-button" data-industry-scroll="1" aria-label="查看右侧分组">→</button></div></div>${aboveHints}<div class="industry-board" role="region" aria-label="按${groupType}分列、按连板高度分行的股票" tabindex="0"><div class="board-comparison" style="--matrix-columns:${columns.length}">${sections}</div></div>`;
 }
 
 function toggleIndustryCellSort(button) {
@@ -2048,7 +2059,7 @@ const SHAREHOLDER_FILTER_GROUPS = [
   {id: "company", label: "企业及其他", types: ["企业股东", "控股机构", "其他", "未分类", "控股主体"]},
   {id: "state", label: "国资及国家队", types: ["国资", "国家队"]},
   {id: "finance", label: "基金及金融机构", types: ["基金", "QFII", "保险", "社保", "券商", "信托", "AMC"]},
-  {id: "clearing", label: "中央汇金及香港结算", types: ["中央汇金", "香港中央结算有限公司"]},
+  {id: "clearing", label: "中央汇金及香港结算", types: ["中央汇金", "香港中央结算有限公司", "中金香港资管账户"]},
 ];
 
 function shareholderTypeBlocked(type) {
@@ -2063,6 +2074,7 @@ function shareholderTypeBlocked(type) {
       if (!state.shareholderBlockedTypes.has(split)) state.shareholderBlockedTypes.set(split, state.shareholderBlockedTypes.get("其他") ?? true);
     }
     if (!state.shareholderBlockedTypes.has("中央汇金")) state.shareholderBlockedTypes.set("中央汇金", state.shareholderBlockedTypes.get("国家队") ?? false);
+    if (!state.shareholderBlockedTypes.has("中金香港资管账户")) state.shareholderBlockedTypes.set("中金香港资管账户", state.shareholderBlockedTypes.get("香港中央结算有限公司"));
   }
   return state.shareholderBlockedTypes.get(type) ?? ["基金", "其他", "QFII"].includes(type);
 }
@@ -2224,8 +2236,8 @@ function openShareholderInfo() {
   const owners = data.control_owners || [];
   const sources = [...new Set(owners.map(owner => owner.source_url))];
   $("shareholder-info-content").innerHTML = `<p>${escapeHTML(data.source)} · 已取得 ${data.coverage} / ${data.requested} 只股票${data.status === "updating" ? " · 正在更新" : data.status === "error" ? " · 更新失败，保留已有缓存" : ""}</p>${profiles.length ? `<p>本股资料获取于 ${escapeHTML(profiles.map(p => p.fetched_at).sort()[0].slice(0, 16).replace("T", " "))}</p>` : ""}${data.control_status ? `<p>控股资料 · 已取得 ${data.control_coverage} / ${data.requested} 只股票${data.control_status === "updating" ? " · 正在更新" : data.control_status === "error" ? " · 更新失败，保留已有缓存" : ""}${owners.length ? `<br>本股控股资料获取于 ${escapeHTML(owners.map(owner => owner.fetched_at).sort()[0].slice(0, 16).replace("T", " "))}` : ""}</p><p>控股股东、实际控制人来自东方财富公司资料；上层股东仅补充有公开文件依据的关系，目前包含华通集团由青岛市国资委全资持有的关系。资料获取时间不代表控制权变更时间，筹划中的转让不作为已完成关系。</p>${sources.length ? `<p class="shareholder-control-sources">${sources.map((url, i) => `<a href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer">${url.includes("chinamoney.org.cn") ? "华通集团股权来源（第 35 页）" : `公司资料来源${sources.length > 2 ? ` ${i + 1}` : ""}`}</a>`).join(" · ")}</p>` : ""}` : ""}<p>${escapeHTML(data.scope_note)}</p>`;
-  $("shareholder-info-content").innerHTML += '<p>屏蔽选项按五组展示，股东明细保留具体类别。企业及其他包含企业股东、控股机构及尚未确认身份的其他主体；企业股东按披露的组织形式区分，AMC 按已核对的机构名单识别。中央汇金及香港结算组包含中央汇金投资、中央汇金资管及香港中央结算三个明确主体，其他国家队股东保留原组。显示“部分”表示保留此前的分类选择，勾选后整组屏蔽，取消后整组显示。</p>';
-  $("shareholder-info-content").innerHTML += '<p>总市值和流通市值取东方财富的所选交易日行情。自由流通市值需另行核实自由流通股本，当前发布渠道暂无可用数据。持股数按两份名单各自报告期的披露值合计，部分缺失时标注已披露人数。</p>';
+  $("shareholder-info-content").innerHTML += '<p>屏蔽选项按五组展示，股东明细保留具体类别。企业及其他包含企业股东、控股机构及尚未确认身份的其他主体；企业股东按披露的组织形式区分，AMC 按已核对的机构名单识别。中央汇金及香港结算组包含中央汇金投资、中央汇金资管、香港中央结算及中国国际金融香港资产管理有限公司-CICCFT3(R)账户，按完整名称识别。显示“部分”表示保留此前的分类选择，勾选后整组屏蔽，取消后整组显示。</p>';
+  $("shareholder-info-content").innerHTML += '<p>总市值和流通市值取东方财富的所选交易日行情。自由流通市值用该行情股价乘以通达信自由流通股本，股本日期单独标注。持股数按两份名单各自报告期的披露值合计，部分缺失时标注已披露人数。</p>';
   $("shareholder-info-dialog").showModal();
 }
 
@@ -3045,7 +3057,7 @@ function filteredRelationPeers() {
   const rows = (state.relationPeers || []).filter(peer =>
     (!state.relationExcludeST || !/^\*?ST/i.test(String(peer.name || "").replace(/\s+/g, "")))
     && (!state.relationExcludeGEM || !/^(300|301)/.test(String(peer.code)))
-    && (!query || `${peer.name} ${peer.code}`.toLocaleLowerCase().includes(query)));
+    && (!query || `${peer.name} ${peer.code} ${nameInitials(peer)}`.toLocaleLowerCase().includes(query)));
   return prioritizeLatest(rows.sort((a, b) => direction * (a[key] - b[key]) || b.lastDate.localeCompare(a.lastDate) || a.code.localeCompare(b.code)));
 }
 
@@ -3071,7 +3083,7 @@ function relationPeerRowsHTML(rows) {
 }
 
 function peerComparisonHTML(peer) {
-  if (!peer) return emptyHTML("暂无对比记录", state.relationQuery ? "换个股票名称或代码试试。" : state.relationExcludeST || state.relationExcludeGEM ? "当前筛选下没有关联股票，可取消勾选后查看。" : "已收录数据中暂无与其他股票的关联记录。");
+  if (!peer) return emptyHTML("暂无对比记录", state.relationQuery ? "换个股票名称、代码或首字母试试。" : state.relationExcludeST || state.relationExcludeGEM ? "当前筛选下没有关联股票，可取消勾选后查看。" : "已收录数据中暂无与其他股票的关联记录。");
   const targetName = state.selectedStock?.name || "本票";
   const entries = peerComparisonEntries(peer);
   const detail = state.comparisonCache?.get(peer.code);
@@ -3083,7 +3095,7 @@ function renderComparisonWorkspace() {
   const rows = filteredRelationPeers();
   if (!rows.some(peer => peer.code === state.relationPeerCode)) state.relationPeerCode = rows[0]?.code || "";
   const selected = rows.find(peer => peer.code === state.relationPeerCode);
-  return `<section class="relation-workspace" aria-label="股票关联对比"><aside class="relation-peer-sidebar" aria-label="关联股票"><header><h4>关联股票</h4><span id="relation-peer-count">${numberValue(rows.length)} 只</span></header><label class="relation-peer-filter"><span class="sr-only">筛选关联股票</span><input id="relation-peer-search" type="search" placeholder="股票名称 / 代码" autocomplete="off" value="${escapeHTML(state.relationQuery || "")}"></label><div id="relation-peer-sort" class="relation-peer-sort" role="group" aria-label="关联股票排序">${relationSortButtonsHTML()}</div><p id="relation-sort-note" class="relation-picker-note">${relationSortNote()}</p><div id="relation-peer-list" class="relation-scroll relation-peer-list" role="region" aria-label="去重后的关联股票列表" tabindex="0">${relationPeerRowsHTML(rows)}</div></aside><div id="relation-peer-detail" class="relation-peer-main" aria-live="polite">${peerComparisonHTML(selected)}</div></section>`;
+  return `<section class="relation-workspace" aria-label="股票关联对比"><aside class="relation-peer-sidebar" aria-label="关联股票"><header><h4>关联股票</h4><span id="relation-peer-count">${numberValue(rows.length)} 只</span></header><label class="relation-peer-filter"><span class="sr-only">筛选关联股票</span><input id="relation-peer-search" type="search" placeholder="股票名称 / 代码 / 首字母" autocomplete="off" value="${escapeHTML(state.relationQuery || "")}"></label><div id="relation-peer-sort" class="relation-peer-sort" role="group" aria-label="关联股票排序">${relationSortButtonsHTML()}</div><p id="relation-sort-note" class="relation-picker-note">${relationSortNote()}</p><div id="relation-peer-list" class="relation-scroll relation-peer-list" role="region" aria-label="去重后的关联股票列表" tabindex="0">${relationPeerRowsHTML(rows)}</div></aside><div id="relation-peer-detail" class="relation-peer-main" aria-live="polite">${peerComparisonHTML(selected)}</div></section>`;
 }
 
 function renderPeerSelection({resetScroll = false} = {}) {
@@ -3146,16 +3158,19 @@ function changeQueryDate() {
   returnToDate();
 }
 
+function minutePinnedCodes() {
+  return new Set([state.intradayCode, ...(state.minuteCompareCodes || []), ...(state.minuteHiddenCodes || [])].filter(Boolean));
+}
+
 function minuteRows() {
   const query = ($("minute-compare-search").value || "").trim().toUpperCase();
-  const selectedCodes = [state.intradayCode, ...(state.minuteCompareCodes || [])];
   const extraRows = [...(state.minuteMatchDetails?.values() || [])]
     .filter(detail => detail.date === state.intradayDate)
     .map(({stock, status}) => ({...stock, status}));
   const rows = [...(state.intradayData?.rows || []), ...extraRows].filter(row => !query || `${row.code} ${row.name} ${row.initials || ""}`.toUpperCase().includes(query))
     .sort((a, b) => String(a.code).localeCompare(String(b.code)));
-  const selected = new Set(query ? [] : selectedCodes);
-  // Outside search, pin selected stocks before the existing board/code priorities.
+  const selected = query ? new Set() : minutePinnedCodes();
+  // Keep hidden and visible stocks in the same pinned group.
   return prioritizeLatest(rows, true).sort((a, b) => Number(selected.has(b.code)) - Number(selected.has(a.code)) || Number(b.boards) - Number(a.boards) || Number(b.stock_type === "broken") - Number(a.stock_type === "broken"));
 }
 
@@ -3214,12 +3229,62 @@ function minuteCompareStyle(index) {
   return {color: colors[index % colors.length], dash: ["", "6 3", "2 3", "8 3 2 3"][Math.floor(index / colors.length) % 4]};
 }
 
+function renderMinuteTagGroups(groups, placeholder = groups.size ? "按标签批量勾选" : "当日暂无可选标签") {
+  state.minuteTagGroups = groups;
+  const select = $("minute-tag-group");
+  const options = `<option value="">${placeholder}</option>` + [...groups].map(([name, codes]) =>
+    `<option value="${escapeHTML(name)}">${escapeHTML(name)} · ${codes.length} 只</option>`).join("");
+  if (select.innerHTML !== options) select.innerHTML = options;
+  select.disabled = !groups.size;
+}
+
+async function loadMinuteTagGroups() {
+  const day = state.intradayDate, generation = state.intradayGeneration;
+  const current = () => state.tab === "intraday" && state.intradayDate === day && state.intradayGeneration === generation;
+  if (!day) {
+    renderMinuteTagGroups(new Map());
+    return;
+  }
+  try {
+    const data = await request(`/api/date?${new URLSearchParams({date: day, boards: "", exclude_st: "0", exclude_gem: "0"})}`, "minute-tag-groups");
+    if (!data || !current()) return;
+    const available = new Set(state.intradayData.rows.filter(row => row.boards > 0).map(row => row.code));
+    const {columns, unknown, untagged} = buildIndustryColumns(data.rows, data.tag_board_counts);
+    const groups = new Map();
+    for (const {labels, stocks} of columns) {
+      const codes = stocks.filter(row => available.has(row.code))
+        .sort((a, b) => b.boards - a.boards || compareStockFirstTime(a, b)).map(row => row.code);
+      if (!codes.length) continue;
+      for (const name of labels) if (name !== unknown && !untagged.has(name)) groups.set(name, codes);
+    }
+    renderMinuteTagGroups(groups, !groups.size && !["ok", "provisional"].includes(data.data_status) ? "当日标签暂不可用" : undefined);
+  } catch {
+    if (current() && !state.minuteTagGroups?.size) renderMinuteTagGroups(new Map(), "当日标签暂未读取");
+  }
+}
+
+async function checkMinuteTagGroup(tag) {
+  const group = state.minuteTagGroups?.get(tag);
+  if (!group) return;
+  const peers = state.minuteCompareCodes ||= [];
+  const selected = new Set([state.intradayCode, ...peers]);
+  const additional = group.filter(code => !selected.has(code));
+  const primary = state.intradayCode ? "" : additional.shift();
+  peers.push(...additional);
+  group.forEach(code => state.minuteHiddenCodes?.delete(code));
+  $("minute-compare-search").value = "";
+  const loadingPrimary = primary ? loadMinuteStock(primary, true, state.minuteComparisons?.get(primary)?.data) : null;
+  renderMinuteList();
+  if (!primary) updateURL();
+  await Promise.all([loadingPrimary, loadMinuteComparisons(additional)]);
+}
+
 function renderMinuteList() {
   const rows = minuteRows(), limit = state.minuteListLimit || 150;
-  const visible = rows.slice(0, limit);
-  visible.push(...rows.filter(row => (row.code === state.intradayCode || (state.minuteCompareCodes || []).includes(row.code)) && !visible.includes(row)));
+  const visible = rows.slice(0, limit), pinned = minutePinnedCodes();
+  visible.push(...rows.slice(limit).filter(row => pinned.has(row.code)));
   $("minute-stock-count").textContent = `${rows.length} / ${(state.intradayData?.total || 0) + (state.minuteMatchDetails?.size || 0)}`;
-  $("minute-stock-list").innerHTML = visible.map(row => `<label class="minute-stock-row minute-compare-row" data-compare-row="${escapeHTML(row.code)}"><input type="checkbox" data-minute-compare="${escapeHTML(row.code)}" aria-label="对比 ${escapeHTML(row.name)} ${escapeHTML(row.code)}"><span class="minute-stock-row-name">${escapeHTML(row.name)}<small>${escapeHTML(row.code)}${row.boards || row.stock_type === "broken" ? ` · <b${row.stock_type === "broken" ? ' class="minute-broken-type"' : ""}>${row.boards ? `${numberValue(row.boards)} 板` : "破板"}</b>` : ""}</small><small class="minute-compare-status" data-minute-status="${escapeHTML(row.code)}">${row.status === "ok" ? "已采集" : row.status === "partial" ? "部分数据" : "按需采集"}</small></span></label>`).join("") + (rows.length > visible.length ? `<span class="minute-more" data-minute-more>向下滚动自动加载（剩余 ${rows.length - visible.length} 只）</span>` : "") || emptyHTML("没有匹配的股票", "试试其他名称、代码或首字母。");
+  $("minute-stock-list").innerHTML = visible.map(row => `<div class="minute-stock-row minute-compare-row" data-compare-row="${escapeHTML(row.code)}"><label class="minute-compare-check"><input type="checkbox" data-minute-compare="${escapeHTML(row.code)}" aria-label="对比 ${escapeHTML(row.name)} ${escapeHTML(row.code)}"><span class="minute-stock-row-name"><span class="minute-compare-name" title="${escapeHTML(row.name)}">${escapeHTML(row.name)}</span><small>${escapeHTML(row.code)}${row.boards || row.stock_type === "broken" ? ` · <b${row.stock_type === "broken" ? ' class="minute-broken-type"' : ""}>${row.boards ? `${numberValue(row.boards)} 板` : "破板"}</b>` : ""}</small><small class="minute-compare-status" data-minute-status="${escapeHTML(row.code)}">${row.status === "ok" ? "已采集" : row.status === "partial" ? "部分数据" : "按需采集"}</small></span></label><button type="button" class="minute-compare-remove" data-minute-remove="${escapeHTML(row.code)}" aria-label="移出${escapeHTML(row.name)}的对比" title="移出对比列表" hidden>移出</button></div>`).join("") + (rows.length > visible.length ? `<span class="minute-more" data-minute-more>向下滚动自动加载（剩余 ${rows.length - visible.length} 只）</span>` : "") || emptyHTML("没有匹配的股票", "试试其他名称、代码或首字母。");
   updateMinuteCompareSelection();
 }
 
@@ -3227,18 +3292,25 @@ function updateMinuteCompareSelection() {
   const codes = state.minuteCompareCodes || [];
   // Keep checkbox nodes/focus intact; negative ranks leave the load-more hint last.
   const order = new Map(minuteRows().map((stock, index, rows) => [stock.code, index - rows.length]));
-  $("minute-compare-count").textContent = String(codes.length + (state.intradayCode ? 1 : 0));
-  $("minute-compare-clear").disabled = !state.intradayCode && !codes.length;
+  const visible = codes.length + (state.intradayCode ? 1 : 0);
+  const total = visible + (state.minuteHiddenCodes?.size || 0);
+  $("minute-compare-count").textContent = String(total);
+  $("minute-compare-visible-count").textContent = String(visible);
+  $("minute-compare-clear").disabled = !total;
   $("minute-stock-list").querySelectorAll("[data-compare-row]").forEach(row => {
     const code = row.dataset.compareRow, primary = code === state.intradayCode, index = codes.indexOf(code);
     const entry = state.minuteComparisons?.get(code), input = row.querySelector("input");
+    const hidden = state.minuteHiddenCodes?.has(code);
     input.checked = primary || index >= 0;
+    row.querySelector("[data-minute-remove]").hidden = !input.checked && !hidden;
+    row.classList.toggle("is-hidden", Boolean(hidden));
     row.style.order = String(order.get(code) ?? 0);
     row.classList.toggle("selected", input.checked);
     row.classList.toggle("is-primary", primary);
+    row.classList.toggle("is-chart-hovered", input.checked && code === state.minuteChartHoverCode);
     row.style.setProperty("--compare-color", primary ? "#ce6251" : index >= 0 ? minuteCompareStyle(index).color : "#8b8795");
     const status = state.intradayData?.rows.find(stock => stock.code === code)?.status || state.minuteMatchDetails?.get(code)?.status;
-    row.querySelector(".minute-compare-status").textContent = primary ? (state.minuteLoading ? "主图 · 读取中" : "主图") : index < 0 ? (status === "ok" ? "已采集" : status === "partial" ? "部分数据" : "按需采集") : entry?.loading ? "读取中" : entry?.error ? "读取失败" : entry?.data?.points.length ? (entry.data.status === "partial" ? "部分数据" : "已叠加") : "无数据";
+    row.querySelector(".minute-compare-status").textContent = hidden ? "已隐藏" : primary ? (state.minuteLoading ? "主图 · 读取中" : "主图") : index < 0 ? (status === "ok" ? "已采集" : status === "partial" ? "部分数据" : "按需采集") : entry?.loading ? "读取中" : entry?.error ? "读取失败" : entry?.data?.points.length ? (entry.data.status === "partial" ? "部分数据" : "已叠加") : "无数据";
   });
 }
 
@@ -3289,9 +3361,26 @@ function refreshMinuteComparisonChart() {
   } else renderMinuteCompareLegend();
 }
 
-async function loadMinuteComparison(code) {
+async function loadMinuteComparisons(codes) {
+  if (!codes.length) return;
+  const comparisons = state.minuteComparisons ??= new Map();
+  const queue = codes.filter(code => !comparisons.get(code)?.data?.points.length).map(code => {
+    const entry = {loading: true};
+    comparisons.set(code, entry);
+    return [code, entry];
+  });
+  refreshMinuteComparisonChart();
+  const worker = async () => {
+    while (queue.length && state.tab === "intraday" && state.minuteComparisons === comparisons) {
+      const [code, entry] = queue.shift();
+      if (comparisons.get(code) === entry) await loadMinuteComparison(code, entry);
+    }
+  };
+  await Promise.all(Array.from({length: Math.min(3, queue.length)}, worker));
+}
+
+async function loadMinuteComparison(code, entry = {loading: true}) {
   const day = state.intradayDate, generation = state.intradayGeneration;
-  const entry = {loading: true};
   state.minuteComparisons ??= new Map();
   state.minuteComparisons.set(code, entry);
   const current = () => state.tab === "intraday" && day === state.intradayDate && generation === state.intradayGeneration &&
@@ -3321,26 +3410,39 @@ async function selectMinuteComparison(code, selected) {
     state.minuteTimelineData?.date === state.intradayDate && state.minuteTimelineData?.pool?.some(row => row.code === code);
   if (code === state.intradayCode || selected && !available) return;
   const codes = state.minuteCompareCodes ||= [];
-  if (selected && !codes.includes(code)) codes.push(code);
-  else if (!selected) {
+  if (selected && !codes.includes(code)) {
+    state.minuteHiddenCodes?.delete(code);
+    codes.push(code);
+  } else if (!selected) {
     state.minuteCompareCodes = codes.filter(value => value !== code);
-    state.requests[`minute-compare-${code}`]?.abort();
-    state.minuteComparisons?.delete(code);
+    if (!state.minuteHiddenCodes?.has(code) || !state.minuteComparisons?.get(code)?.data?.points.length) {
+      state.requests[`minute-compare-${code}`]?.abort();
+      state.minuteComparisons?.delete(code);
+    }
   } else return;
   updateURL();
   refreshMinuteComparisonChart();
-  if (selected) await loadMinuteComparison(code);
+  if (selected && !state.minuteComparisons?.get(code)?.data?.points.length) await loadMinuteComparison(code);
 }
 
-function clearMinuteComparisons() {
+function clearMinuteComparisons(update = true) {
   (state.minuteCompareCodes || []).forEach(code => state.requests[`minute-compare-${code}`]?.abort());
   state.minuteCompareCodes = [];
   state.minuteComparisons = new Map();
-  updateURL();
-  refreshMinuteComparisonChart();
+  state.minuteHiddenCodes = new Set();
+  if (update) {
+    updateURL();
+    refreshMinuteComparisonChart();
+  }
 }
 
 function clearMinuteStocks() {
+  clearMinuteComparisons(false);
+  resetMinuteStockChart();
+}
+
+function resetMinuteStockChart(update = true) {
+  setMinuteChartHover();
   clearError();
   state.requests["intraday-stock"]?.abort();
   state.minuteStockGeneration = (state.minuteStockGeneration || 0) + 1;
@@ -3348,10 +3450,11 @@ function clearMinuteStocks() {
   state.minuteSelectionCleared = true;
   state.minuteLoading = false;
   state.minuteDetail = null;
-  clearMinuteComparisons();
+  updateMinuteCompareSelection();
+  renderMinuteCompareLegend();
+  if (update) updateURL();
   $("minute-stock-title").textContent = "选择股票查看分时";
   $("minute-stock-code").textContent = "";
-  $("minute-stock-detail").textContent = "";
   renderMinuteProfile({}, true);
   $("minute-stock-boards").hidden = true;
   $("minute-stock-history").hidden = true;
@@ -3359,18 +3462,40 @@ function clearMinuteStocks() {
   $("minute-hover").textContent = "";
   $("minute-data-note").textContent = "";
   $("minute-chart").setAttribute("aria-busy", "false");
-  $("minute-chart").innerHTML = emptyHTML("请选择主板股票", "在左侧勾选股票，可同时对比多只股票的分时和成交量。");
+  $("minute-chart").innerHTML = state.minuteHiddenCodes?.size
+    ? emptyHTML("分时已全部隐藏", "勾选左侧对比列表中的股票恢复显示。")
+    : emptyHTML("请选择主板股票", "在左侧勾选股票，可同时对比多只股票的分时和成交量。");
+}
+
+async function excludeMinuteStock(code, hide = false) {
+  const hidden = state.minuteHiddenCodes ||= new Set();
+  if (hide) hidden.add(code);
+  else hidden.delete(code);
+  if (code !== state.intradayCode) {
+    await selectMinuteComparison(code, false);
+    if (!state.intradayCode) resetMinuteStockChart(false);
+    return;
+  }
+
+  const current = state.minuteDetail;
+  if (hide && current?.stock.code === code && current.points.length) {
+    (state.minuteComparisons ||= new Map()).set(code, {data: current});
+  }
+  const next = state.minuteCompareCodes?.[0];
+  if (next) {
+    // The outgoing primary should disappear even if the replacement is still loading.
+    state.minuteDetail = null;
+    $("minute-quote").hidden = true;
+    $("minute-chart").innerHTML = loadingHTML();
+    return loadMinuteStock(next, true, state.minuteComparisons?.get(next)?.data);
+  }
+  resetMinuteStockChart();
 }
 
 async function selectMinuteStock(code, selected) {
-  if (selected && !state.intradayCode) return loadMinuteStock(code);
-  if (!selected && code === state.intradayCode) {
-    const next = state.minuteCompareCodes?.[0];
-    if (next) return loadMinuteStock(next);
-    clearMinuteStocks();
-    return;
-  }
-  return selectMinuteComparison(code, selected);
+  if (!selected) return excludeMinuteStock(code, true);
+  if (!state.intradayCode) return loadMinuteStock(code, true, state.minuteComparisons?.get(code)?.data);
+  return selectMinuteComparison(code, true);
 }
 
 async function requestMinuteData(day, code, channel, current = () => true) {
@@ -3422,7 +3547,7 @@ function recordMinuteData(data) {
   state.intradayData.ready = rows.filter(r => r.status === "ok").length;
   state.intradayData.partial = rows.filter(r => r.status === "partial").length;
   $("minute-coverage").textContent = `主板 ${state.intradayData.total} 只 · 已缓存 ${state.intradayData.ready} 只完整分时${state.intradayData.partial ? ` · ${state.intradayData.partial} 只部分数据` : ""} · 未缓存按需采集`;
-  $("minute-stock-list").querySelectorAll(`[data-minute-status="${data.stock.code}"]`).forEach(label => { label.textContent = data.status === "ok" ? "已采集" : data.status === "partial" ? "部分数据" : "读取失败，可重选"; });
+  if (!state.minuteHiddenCodes?.has(data.stock.code)) $("minute-stock-list").querySelectorAll(`[data-minute-status="${data.stock.code}"]`).forEach(label => { label.textContent = data.status === "ok" ? "已采集" : data.status === "partial" ? "部分数据" : "读取失败，可重选"; });
   if (changed && !state.minuteTimelineCollecting && !state.minuteLiveRefreshing && state.minuteTimelineData?.date === data.date && state.minuteTimelineData.pool?.some(stock => stock.code === data.stock.code)) loadMinuteTimeline({quiet: true});
 }
 
@@ -3447,6 +3572,7 @@ async function refreshVisibleMinuteData() {
     const overview = await request(`/api/intraday?date=${encodeURIComponent(day)}`, "minute-live-overview");
     if (!overview || !current()) return;
     state.intradayData = overview;
+    loadMinuteTagGroups();
     state.minuteComparisons ||= new Map();
     updateMinuteDateNavigation();
     const listScroll = $("minute-stock-list").scrollTop;
@@ -3533,6 +3659,7 @@ function minuteDisplayPoint(data, point) {
 function openMinuteMatchPair(day, primary, peer) {
   state.minuteMatchDate = day;
   state.minuteCompareCodes = [peer];
+  state.minuteHiddenCodes = new Set();
   state.minuteSelectionCleared = false;
   $("minute-compare-search").value = "";
   setIntradayPane("mainboard", false);
@@ -3544,6 +3671,8 @@ function openMinuteMatchPair(day, primary, peer) {
 
 async function loadIntraday({day = state.intradayDate || "", code = state.intradayCode || ""} = {}) {
   stopMinuteTimelineCollection(false);
+  state.requests["minute-tag-groups"]?.abort();
+  renderMinuteTagGroups(new Map(), "正在读取当日标签…");
   state.minuteMatchDetails = new Map();
   closeMinuteTimelineStockPickers();
   state.minuteTimelineData = null;
@@ -3563,6 +3692,7 @@ async function loadIntraday({day = state.intradayDate || "", code = state.intrad
   updateMinuteDateNavigation();
   state.requests["intraday-stock"]?.abort();
   setView("intraday");
+  setMinuteChartHover();
   $("minute-stock-list").setAttribute("aria-busy", "true");
   $("minute-stock-list").innerHTML = loadingHTML();
   $("minute-chart").innerHTML = loadingHTML();
@@ -3592,7 +3722,7 @@ async function loadIntraday({day = state.intradayDate || "", code = state.intrad
     const availableCodes = new Set([...catalogCodes, ...(state.minuteTimelineData?.pool || []).map(row => row.code)]);
     if (state.minuteMatchDate === state.intradayDate) {
       // A match may be outside the ordinary mainboard picker, but already has dated minute data.
-      const extraCodes = [...new Set([code, ...(state.minuteCompareCodes || [])])].filter(value => value && !catalogCodes.has(value));
+      const extraCodes = [...new Set([code, ...(state.minuteCompareCodes || []), ...(state.minuteHiddenCodes || [])])].filter(value => value && !catalogCodes.has(value));
       const details = await Promise.all(extraCodes.map(value =>
         request(`/api/intraday/stock?date=${encodeURIComponent(state.intradayDate)}&code=${encodeURIComponent(value)}&cached_match=1`, `minute-match-${value}`)
       ));
@@ -3603,16 +3733,19 @@ async function loadIntraday({day = state.intradayDate || "", code = state.intrad
       }
     }
     const visible = minuteRows();
-    state.intradayCode = availableCodes.has(code) ? code : state.minuteSelectionCleared ? "" : visible[0]?.code || data.rows[0]?.code || "";
-    state.minuteCompareCodes = [...new Set(state.minuteCompareCodes || [])].filter(value => value !== state.intradayCode && availableCodes.has(value));
+    const peers = [...new Set(state.minuteCompareCodes || [])].filter(value => availableCodes.has(value));
+    state.intradayCode = availableCodes.has(code) ? code : peers[0] || (state.minuteSelectionCleared ? "" : visible[0]?.code || data.rows[0]?.code || "");
+    state.minuteCompareCodes = peers.filter(value => value !== state.intradayCode);
+    const displayed = new Set([state.intradayCode, ...state.minuteCompareCodes]);
+    state.minuteHiddenCodes = new Set([...(state.minuteHiddenCodes || [])].filter(value => availableCodes.has(value) && !displayed.has(value)));
     renderMinuteList();
+    loadMinuteTagGroups();
     updateURL({replace: true});
-    if (state.intradayCode) await Promise.all([loadMinuteStock(state.intradayCode, false), ...state.minuteCompareCodes.map(value => loadMinuteComparison(value))]);
-    else if (state.minuteSelectionCleared) clearMinuteStocks();
+    if (state.intradayCode) await Promise.all([loadMinuteStock(state.intradayCode, false), loadMinuteComparisons(state.minuteCompareCodes)]);
+    else if (state.minuteSelectionCleared) resetMinuteStockChart(false);
     else {
       state.minuteDetail = null;
       $("minute-stock-title").textContent = "暂无可查看的数据";
-      $("minute-stock-detail").textContent = "";
       $("minute-hover").textContent = "";
       $("minute-chart").innerHTML = emptyHTML("暂无可选交易日", "项目交易日历就绪后，切换日期即可按需读取分时。", "calendar");
     }
@@ -3620,6 +3753,7 @@ async function loadIntraday({day = state.intradayDate || "", code = state.intrad
     if (state.tab === "intraday" && generation === state.intradayGeneration) {
       showError(error, () => loadIntraday({day, code}));
       $("minute-coverage").textContent = "本地分时数据暂未读取成功";
+      renderMinuteTagGroups(new Map(), "当日标签暂未读取");
       $("minute-stock-list").innerHTML = emptyHTML("读取失败", "请点击重新加载。");
       $("minute-stock-title").textContent = "读取失败";
       $("minute-chart").innerHTML = emptyHTML("分时查询未完成", error.message);
@@ -3636,14 +3770,12 @@ async function loadIntraday({day = state.intradayDate || "", code = state.intrad
 
 
 function renderMinuteStockData(data) {
-  const day = data.date;
   $("minute-stock-title").textContent = data.stock.name;
   $("minute-stock-code").textContent = data.stock.code;
   $("minute-stock-boards").hidden = !data.stock.boards && data.stock.stock_type !== "broken";
   $("minute-stock-boards").textContent = data.stock.boards ? `${data.stock.boards} 板` : data.stock.stock_type === "broken" ? "破板" : "";
   renderMinuteProfile(data.stock);
   $("minute-stock-history").hidden = false;
-  $("minute-stock-detail").textContent = `${dateLabel(day)} · 不复权${data.provisional ? " · 盘中暂定" : ""}${data.stock.first_time ? ` · 首封 ${data.stock.first_time.slice(-8)}` : ""}`;
   $("minute-data-note").textContent = `${data.source || "本地分时档案"} · ${data.note}${data.reference_basis?.includes("未校正除权") ? " · 涨幅按前交易日分时收盘参考，除权日可能有差异" : ""}${data.fetched_at ? ` · 采集于 ${data.fetched_at.slice(0, 19).replace("T", " ")}（北京时间）` : ""}${data.provisional ? " · 每分钟刷新，收盘前数据可能变化" : ""}${data.refresh_error ? " · 本次采集未完成，保留上次分时并自动重试" : ""}`;
   if (!data.points.length) {
     $("minute-quote").hidden = true;
@@ -3659,12 +3791,14 @@ function renderMinuteStockData(data) {
   $("minute-chart").innerHTML = minuteChartHTML(data);
 }
 
-async function loadMinuteStock(code, update = true) {
+async function loadMinuteStock(code, update = true, cached = null) {
   const day = state.intradayDate;
   if (update && !state.minuteLoading && state.intradayCode === code && state.minuteDetail?.stock.code === code && state.minuteDetail.date === day) return;
   const generation = state.minuteStockGeneration = (state.minuteStockGeneration || 0) + 1;
   const current = () => generation === state.minuteStockGeneration && state.tab === "intraday" && day === state.intradayDate && code === state.intradayCode;
+  setMinuteChartHover();
   state.intradayCode = code;
+  state.minuteHiddenCodes?.delete(code);
   state.minuteSelectionCleared = false;
   state.minuteLoading = true;
   // A selected peer becomes the primary without drawing the same stock twice.
@@ -3683,14 +3817,13 @@ async function loadMinuteStock(code, update = true) {
     $("minute-stock-boards").hidden = !row?.boards && row?.stock_type !== "broken";
     $("minute-stock-boards").textContent = row?.boards ? `${row.boards} 板` : row?.stock_type === "broken" ? "破板" : "";
     renderMinuteProfile(row || {code, name: code}, !row);
-    $("minute-stock-detail").textContent = `${dateLabel(day)} · 不复权`;
   }
   $("minute-stock-history").disabled = true;
   $("minute-show-average").disabled = true;
   $("minute-chart").setAttribute("data-loading-label", `正在切换至 ${row?.name || code}…`);
   $("minute-chart").setAttribute("aria-busy", "true");
   try {
-    const data = await requestMinuteData(day, code, "intraday-stock", current);
+    const data = cached?.date === day && cached.points.length ? cached : await requestMinuteData(day, code, "intraday-stock", current);
     if (!data || !current()) return;
     state.minuteDetail = data;
     state.minutePointIndex = 0;
@@ -3718,7 +3851,44 @@ async function loadMinuteStock(code, update = true) {
   }
 }
 
+function setMinuteChartHover(code = "") {
+  if (code === (state.minuteChartHoverCode || "")) return;
+  const chart = $("minute-chart");
+  for (const [container, attribute] of [
+    [chart, "data-minute-price-code"], [chart, "data-minute-volume-row"], [$("minute-stock-list"), "data-compare-row"]
+  ]) {
+    container.querySelectorAll(`[${attribute}].is-chart-hovered`).forEach(node => node.classList.remove("is-chart-hovered"));
+    if (code) container.querySelector(`[${attribute}="${code}"]`)?.classList.add("is-chart-hovered");
+  }
+  state.minuteChartHoverCode = code;
+}
+
+function minutePriceHoverCode(px, py, scaleX, scaleY) {
+  const {priceSeries} = state.minuteChartScale;
+  const radius = 7, left = px - radius / scaleX, right = px + radius / scaleX;
+  let code = "", bestDistance = radius * radius;
+  // Resolve overlapping hit areas by the nearest drawn segment, then by paint order.
+  for (const {code: stockCode, points} of priceSeries) {
+    for (let i = 1; i < points.length; i++) {
+      const start = points[i - 1], end = points[i];
+      if (start.x > right) break;
+      if (end.x < left || end.move) continue;
+      const ax = (start.x - px) * scaleX, ay = (start.y - py) * scaleY;
+      const dx = (end.x - start.x) * scaleX, dy = (end.y - start.y) * scaleY;
+      const lengthSquared = dx * dx + dy * dy;
+      const progress = lengthSquared ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lengthSquared)) : 0;
+      const distance = (ax + dx * progress) ** 2 + (ay + dy * progress) ** 2;
+      if (distance <= bestDistance) {
+        code = stockCode;
+        bestDistance = distance;
+      }
+    }
+  }
+  return code;
+}
+
 function minuteChartHTML(data) {
+  setMinuteChartHover();
   const prev = data.previous_close, showAverage = $("minute-show-average").checked;
   const peers = (state.minuteCompareCodes || []).map((code, index) => ({code, index, data: state.minuteComparisons?.get(code)?.data}))
     .filter(peer => peer.data?.points.length && peer.data.previous_close > 0);
@@ -3727,16 +3897,26 @@ function minuteChartHTML(data) {
   const extent = Math.max(prev * 0.01, ...prices) * 1.08, low = Math.max(0.001, prev - extent), high = prev + extent;
   const x = slot => 170 + slot / 240 * 750;
   const y = price => 28 + (high - price) / (high - low) * 270;
-  state.minuteChartScale = {x, y, slotAt: px => (px - 170) / 750 * 240};
-  const path = (key, points = data.points, previousClose = prev) => {
+  const plotPrice = (price, previousClose) => y(price / previousClose * prev);
+  const linePoints = (detail, key) => {
+    const vertices = [];
+    const opening = key === "price" && detail.auction?.points?.at(-1);
     let previous = null;
-    return points.map(p => {
-      if (!Number.isFinite(p[key])) { previous = null; return ""; }
-      const move = previous === null || p.slot - previous > 1;
-      previous = p.slot;
-      return `${move ? "M" : "L"}${x(p.slot).toFixed(2)},${y(p[key] / previousClose * prev).toFixed(2)}`;
-    }).join(" ");
+    // Join the real 09:25 match to an available opening minute (09:30 or 09:31).
+    if (opening && detail.points[0]?.slot <= 1) {
+      vertices.push({x: 140, y: plotPrice(opening.price, detail.previous_close), move: true});
+      previous = 0;
+    }
+    for (const point of detail.points) {
+      if (!Number.isFinite(point[key])) { previous = null; continue; }
+      vertices.push({x: x(point.slot), y: plotPrice(point[key], detail.previous_close), move: previous === null || point.slot - previous > 1});
+      previous = point.slot;
+    }
+    return vertices;
   };
+  const path = points => points.map(p => `${p.move ? "M" : "L"}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+  const priceSeries = [...peers.map(peer => peer.data), data].map(detail => ({code: detail.stock.code, points: linePoints(detail, "price")}));
+  state.minuteChartScale = {x, slotAt: px => (px - 170) / 750 * 240, priceSeries};
   let axes = "";
   for (let i = 0; i <= 4; i++) {
     const price = high - (high - low) * i / 4, yy = y(price);
@@ -3764,42 +3944,44 @@ function minuteChartHTML(data) {
       </svg></div>`;
   }).join("");
   const auction = series.map(item => (item.data.auction?.points || []).map(p => {
-    const yy = y(p.price / item.data.previous_close * prev);
+    const yy = plotPrice(p.price, item.data.previous_close);
     return `<circle cx="140" cy="${yy.toFixed(2)}" r="3.5" class="minute-auction-point" data-auction-code="${escapeHTML(item.data.stock.code)}" style="fill:${item.color}"/>`;
   }).join("")).join("");
-  const comparisons = peers.map(peer => {
+  const comparisons = peers.map((peer, index) => {
     const style = minuteCompareStyle(peer.index);
-    return `<path d="${path("price", peer.data.points, peer.data.previous_close)}" class="minute-compare-line" data-compare-code="${escapeHTML(peer.code)}" stroke="${style.color}"${style.dash ? ` stroke-dasharray="${style.dash}"` : ""}/>`;
+    return `<path d="${path(priceSeries[index].points)}" class="minute-compare-line" data-compare-code="${escapeHTML(peer.code)}" stroke="${style.color}" data-minute-price-code="${escapeHTML(peer.code)}"${style.dash ? ` stroke-dasharray="${style.dash}"` : ""}/>`;
   }).join("");
-  return `<svg viewBox="0 0 1000 335" class="minute-svg" tabindex="0" role="img" aria-label="${escapeHTML(data.stock.name)} ${escapeHTML(data.date)} 分时价格、${showAverage ? "均价和" : ""}成交量。${peers.length ? `与 ${escapeHTML(peers.map(peer => peer.data.stock.name).join("、"))} 按昨收涨幅及分行成交量对比。` : ""}左侧竞价区域仅显示已取得的 09:25 撮合点。使用左右方向键逐分钟查看。">
+  return `<svg viewBox="0 0 1000 335" class="minute-svg" tabindex="0" role="img" aria-label="${escapeHTML(data.stock.name)} ${escapeHTML(data.date)} 分时价格、${showAverage ? "均价和" : ""}成交量。${peers.length ? `与 ${escapeHTML(peers.map(peer => peer.data.stock.name).join("、"))} 按昨收涨幅及分行成交量对比。` : ""}有开盘分钟数据时，左侧 09:25 竞价撮合点与开盘走势相连。使用左右方向键逐分钟查看。">
     <rect x="70" y="28" width="85" height="270" class="minute-auction-bg"/><text x="112" y="47" text-anchor="middle">竞价</text><text x="16" y="16">${peers.length ? "主图价格 / 元" : "价格 / 元"}</text><text x="932" y="16">涨幅</text>${axes}
     <line x1="70" y1="${y(prev)}" x2="920" y2="${y(prev)}" class="minute-reference"/><line x1="545" y1="28" x2="545" y2="298" class="minute-grid"/>
-    ${comparisons}${showAverage ? `<path d="${path("average")}" class="minute-average-line"/>` : ""}<path d="${path("price")}" class="minute-price-line"/>
+    ${comparisons}${showAverage ? `<path d="${path(linePoints(data, "average"))}" class="minute-average-line"/>` : ""}<path d="${path(priceSeries.at(-1).points)}" class="minute-price-line" data-minute-price-code="${escapeHTML(data.stock.code)}"/>
     ${auction}${!data.auction?.points?.length ? '<text x="112" y="180" text-anchor="middle">暂无竞价</text>' : ""}
     <text x="70" y="324" text-anchor="middle">09:15</text><text x="130" y="324" text-anchor="middle">09:25</text><text x="180" y="324" text-anchor="middle">09:30</text><text x="357.5" y="324" text-anchor="middle">10:30</text><text x="545" y="324" text-anchor="middle">11:30 / 13:00</text><text x="732.5" y="324" text-anchor="middle">14:00</text><text x="920" y="324" text-anchor="middle">15:00</text>
-    <g id="minute-crosshair" hidden><line id="minute-cursor-line" x1="170" x2="170" y1="28" y2="306"/><circle id="minute-cursor-dot" cx="170" cy="28" r="4"/><g id="minute-cursor-time" transform="translate(170 0)"><rect x="-36" y="306" width="72" height="27" rx="4"/><text id="minute-cursor-time-text" x="0" y="324" text-anchor="middle"></text></g></g>
+    <g id="minute-crosshair" hidden><line id="minute-cursor-line" x1="170" x2="170" y1="28" y2="306"/><g id="minute-cursor-time" transform="translate(170 0)"><rect x="-70" y="306" width="140" height="27" rx="4"/><text id="minute-cursor-time-text" x="0" y="324" text-anchor="middle"></text></g></g>
   </svg><div class="minute-volume-toolbar"><span>成交量 / 手</span>${series.length > 1 ? `<div class="minute-volume-modes" role="group" aria-label="成交量刻度"><button type="button" data-minute-volume-scale="shared" aria-pressed="${sharedScale}" title="相同柱高代表相同手数">统一刻度</button><button type="button" data-minute-volume-scale="individual" aria-pressed="${!sharedScale}" title="各行独立缩放，便于查看各股量能变化；柱高不直接比较手数">各自刻度</button></div>` : ""}</div>${volume}<div class="minute-volume-times" aria-hidden="true"><span style="left:17%">09:30</span><span style="left:54.5%">11:30 / 13:00</span><span style="left:92%">15:00</span></div>`;
+}
+
+function showMinuteCursor(position, time, percent) {
+  $("minute-crosshair").removeAttribute("hidden");
+  $("minute-cursor-line").setAttribute("x1", position);
+  $("minute-cursor-line").setAttribute("x2", position);
+  $("minute-cursor-time").setAttribute("transform", `translate(${position} 0)`);
+  const change = percent === null ? "" : ` · ${percent > 0 ? "+" : ""}${numberValue(percent, 2)}%`;
+  $("minute-cursor-time-text").textContent = time + change;
 }
 
 function showMinuteAuctionPoint() {
   const data = state.minuteDetail, point = data?.auction?.points?.at(-1);
   if (state.minuteLoading || !data?.points.length || !$("minute-crosshair")) return;
   state.minuteHoverMode = "auction";
-  $("minute-crosshair").removeAttribute("hidden");
-  $("minute-cursor-line").setAttribute("x1", 140);
-  $("minute-cursor-line").setAttribute("x2", 140);
-  $("minute-cursor-time").setAttribute("transform", "translate(140 0)");
-  $("minute-cursor-time-text").textContent = "09:25";
+  const percent = point ? (point.price / data.previous_close - 1) * 100 : null;
+  showMinuteCursor(140, "09:25", percent);
   if (!point) {
-    $("minute-cursor-dot").setAttribute("hidden", "");
     $("minute-hover").textContent = "主图该日竞价记录未取得；下方显示对比股已取得的竞价读数。";
     renderMinuteCompareLegend("auction");
     return;
   }
-  $("minute-cursor-dot").removeAttribute("hidden");
-  $("minute-cursor-dot").setAttribute("cx", 140);
-  $("minute-cursor-dot").setAttribute("cy", state.minuteChartScale.y(point.price));
-  $("minute-hover").textContent = `09:25 开盘竞价撮合　价格 ${numberValue(point.price, 2)}　涨幅 ${numberValue((point.price / data.previous_close - 1) * 100, 2)}%　撮合量 ${numberValue(point.volume / 100)} 手　金额 ${numberValue(point.amount / 10000, 2)} 万元`;
+  $("minute-hover").textContent = `09:25 开盘竞价撮合　价格 ${numberValue(point.price, 2)}　涨幅 ${numberValue(percent, 2)}%　撮合量 ${numberValue(point.volume / 100)} 手　金额 ${numberValue(point.amount / 10000, 2)} 万元`;
   renderMinuteCompareLegend("auction");
 }
 
@@ -3809,17 +3991,11 @@ function showMinutePoint(index) {
   index = Math.max(0, Math.min(data.points.length - 1, index));
   state.minutePointIndex = index;
   state.minuteHoverMode = "regular";
-  $("minute-cursor-dot").removeAttribute("hidden");
-  const point = minuteDisplayPoint(data, data.points[index]), {x, y} = state.minuteChartScale;
-  $("minute-crosshair").removeAttribute("hidden");
-  $("minute-cursor-line").setAttribute("x1", x(point.slot));
-  $("minute-cursor-line").setAttribute("x2", x(point.slot));
-  $("minute-cursor-time").setAttribute("transform", `translate(${x(point.slot)} 0)`);
-  $("minute-cursor-time-text").textContent = point.time;
-  $("minute-cursor-dot").setAttribute("cx", x(point.slot));
-  $("minute-cursor-dot").setAttribute("cy", y(point.price));
+  const point = minuteDisplayPoint(data, data.points[index]);
+  const percent = (point.price / data.previous_close - 1) * 100;
+  showMinuteCursor(state.minuteChartScale.x(point.slot), point.time, percent);
   const average = $("minute-show-average").checked ? `　均价 ${numberValue(point.average, 3)}` : "";
-  $("minute-hover").textContent = `${point.time}　价格 ${numberValue(point.price, 2)}${average}　涨幅 ${numberValue((point.price / data.previous_close - 1) * 100, 2)}%　成交量 ${numberValue(point.volume / 100)} 手　成交额 ${numberValue(point.amount / 10000, 2)} 万元`;
+  $("minute-hover").textContent = `${point.time}　价格 ${numberValue(point.price, 2)}${average}　涨幅 ${numberValue(percent, 2)}%　成交量 ${numberValue(point.volume / 100)} 手　成交额 ${numberValue(point.amount / 10000, 2)} 万元`;
   renderMinuteCompareLegend(point.slot, point.time);
 }
 
@@ -4586,7 +4762,18 @@ $("minute-stock-list").addEventListener("change", event => {
   const input = event.target.closest("[data-minute-compare]");
   if (input) selectMinuteStock(input.dataset.minuteCompare, input.checked);
 });
+$("minute-stock-list").addEventListener("click", event => {
+  const button = event.target.closest("[data-minute-remove]");
+  if (!button) return;
+  excludeMinuteStock(button.dataset.minuteRemove);
+  button.closest("[data-compare-row]").querySelector("input").focus({preventScroll: true});
+});
 $("minute-compare-clear").addEventListener("click", clearMinuteStocks);
+$("minute-tag-group").addEventListener("change", event => {
+  const tag = event.target.value;
+  event.target.value = "";
+  checkMinuteTagGroup(tag);
+});
 $("minute-compare-search").addEventListener("input", () => {
   state.minuteListLimit = 150;
   renderMinuteList();
@@ -4622,11 +4809,18 @@ $("minute-chart").addEventListener("pointermove", event => {
   const svg = event.target.closest(".minute-svg,.minute-volume-svg"), points = state.minuteDetail?.points;
   if (!svg || !points?.length) return;
   const rect = svg.getBoundingClientRect(), px = (event.clientX - rect.left) / rect.width * 1000;
+  const py = (event.clientY - rect.top) / rect.height * 335;
+  const overPrices = !state.minuteLoading && svg.matches(".minute-svg") && px >= 133 && py >= 21 && py <= 305;
+  setMinuteChartHover(overPrices ? minutePriceHoverCode(px, py, rect.width / 1000, rect.height / 335) : "");
   if (px < 155) { showMinuteAuctionPoint(); return; }
   const slot = state.minuteChartScale.slotAt(px);
   let nearest = 0;
   points.forEach((point, index) => { if (Math.abs(point.slot - slot) < Math.abs(points[nearest].slot - slot)) nearest = index; });
   showMinutePoint(nearest);
+});
+$("minute-chart").addEventListener("pointerout", event => {
+  const svg = event.target.closest(".minute-svg");
+  if (svg && !svg.contains(event.relatedTarget)) setMinuteChartHover();
 });
 $("minute-chart").addEventListener("click", event => {
   const button = event.target.closest("[data-minute-volume-scale]");
@@ -5019,6 +5213,9 @@ async function restoreFromURL({remember = false} = {}) {
     state.minuteMatchDate = params.get("minute_match") === "1" ? state.intradayDate : null;
     state.intradayCode = params.get("minute_code") || "";
     state.minuteCompareCodes = [...new Set((params.get("minute_compare") || "").split(",").filter(code => /^\d{6}$/.test(code)))];
+    const visible = new Set([state.intradayCode, ...state.minuteCompareCodes]);
+    state.minuteHiddenCodes = new Set((params.get("minute_hidden") || "").split(",").filter(code => /^\d{6}$/.test(code) && !visible.has(code)));
+    state.minuteSelectionCleared = !state.intradayCode && !state.minuteCompareCodes.length && state.minuteHiddenCodes.size > 0;
     $("minute-compare-search").value = "";
   }
   state.selectedStock = view === "stock" ? {code: params.get("code"), name: ""} : null;

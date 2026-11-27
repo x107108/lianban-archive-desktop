@@ -37,7 +37,7 @@ ordered($("blacklist-table-area").innerHTML);
 const cohorts = [{...stock,boards:1},{...stock,code:"000002",name:"样本乙",boards:8,tags:["小标签"]}];
 const columns = context.renderIndustryColumns(cohorts);
 const labels = [...columns.matchAll(/data-group-label="([^"]+)"/g)].map(match => match[1]);
-assert.deepEqual(labels.slice(0,3),["小标签","大标签 / 自定义","小标签"],"one shared tag keeps the stock out of solitary; private tags continue normal merged presentation");
+assert.deepEqual(labels,["小标签","小标签"],"one shared tag carries the first-board stock without redundant private columns");
 context.state.tagDraft = [...stock.tags];
 context.renderTagEditor();
 assert.deepEqual([...$("tag-editor-list").innerHTML.matchAll(/data-tag-index="([0-9]+)"/g)].map(match => match[1]),["2","1","0"],"sorted editor fields retain their original edit/delete indices");

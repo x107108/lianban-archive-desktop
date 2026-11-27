@@ -21,7 +21,7 @@ function harness({beforePost, freshPrimary = true, editable = true} = {}) {
       return {...detail(code), needs_refresh: code !== codes[0] || !freshPrimary};
     },
     loadMinuteTimeline: async options => {assert.equal(options.quiet, true); context.state.minuteTimelineData = {date: day, pool: [...codes, codes[2]].map(code => ({code}))};},
-    updateMinuteDateNavigation() {}, renderMinuteList() {$("minute-stock-list").scrollTop = 0;},
+    loadMinuteTagGroups() {}, updateMinuteDateNavigation() {}, renderMinuteList() {$("minute-stock-list").scrollTop = 0;},
     recordMinuteData(data) {records.push(data.stock.code);}, renderMinuteStockData() {renders++;},
     showMinutePoint(index) {positions.push(index);}, showMinuteAuctionPoint() {}, refreshMinuteComparisonChart() {},
     updateMinuteTimelineControls() {context.updateMinuteTimelineLiveStatus();}

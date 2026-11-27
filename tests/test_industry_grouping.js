@@ -27,7 +27,7 @@ assert.ok(!full.includes('data-group-label="独有"'), "a private secondary tag 
 const fiveBoardRow = full.slice(full.indexOf('data-board-height="5"'), full.indexOf('data-board-height="3"'));
 const sameHeightCell = fiveBoardRow.split('data-group-label="同板业务"')[1].split('<section class="matrix-cell')[0];
 assert.ok(!sameHeightCell.includes('data-card-code="000001"'), "same-height peers cannot trigger extra cards");
-assert.equal(occurrences(full, "000004"), 2, "first-board stocks keep all their tags");
+assert.equal(occurrences(full, "000004"), 1, "a first-board stock drops its private column when a shared sector already carries it");
 assert.equal(occurrences(full, "000006"), 1, "an untagged stock still has a fallback card");
 assert.ok(full.includes('data-group-label="暂无标签 · 样本000006"') && !full.includes('data-group-label="独苗"'), "an untagged consecutive-board stock gets its own column");
 const selected = context.renderIndustryColumns(rows.filter(row => row.boards === 5), context.industryTagBoardCounts(rows));

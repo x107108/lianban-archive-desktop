@@ -319,6 +319,7 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   assert.equal(context.shareholderTypeBlocked("企业股东"),true,"new corporate types inherit the previous Other setting");
   assert.equal(context.shareholderTypeBlocked("AMC"),true,"new AMC types also inherit Other rather than silently becoming visible");
   assert.equal(context.shareholderTypeBlocked("香港中央结算有限公司"),false,"existing clearing preferences remain independent");
+  assert.equal(context.shareholderTypeBlocked("中金香港资管账户"),false,"the selected CICC account inherits the existing clearing choice");
   assert.equal(context.shareholderTypeBlocked("中央汇金"),true,"Huijin inherits the previous state-team choice");
   context.state.shareholderData={...data,rows:[
     {code:"000010",name:"企业关联",same_day_limit_up:true,holders:[holder("某企业","企业股东")]},
@@ -350,16 +351,17 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   assert.equal(context.shareholderTypeBlocked("AMC"),false,"group choices persist independently after reload");
   context.state.shareholderData={...data,rows:[
     {code:"000010",name:"汇金关联",same_day_limit_up:true,holders:[holder("中央汇金资产管理有限责任公司","中央汇金")]},
-    {code:"000011",name:"结算关联",same_day_limit_up:true,holders:[holder("香港中央结算有限公司","香港中央结算有限公司")]},
+    {code:"000011",name:"结算关联",same_day_limit_up:true,holders:[holder("香港中央结算有限公司","香港中央结算有限公司"),holder("中国国际金融香港资产管理有限公司-CICCFT3(R)","中金香港资管账户")]},
     {code:"000012",name:"证金关联",same_day_limit_up:true,holders:[holder("中国证券金融股份有限公司","国家队")]}]};
-  context.state.shareholderAlertTypes=new Map([["000010",["中央汇金"]],["000011",["香港中央结算有限公司"]],["000012",["国家队"]]]);
+  context.state.shareholderAlertTypes=new Map([["000010",["中央汇金"]],["000011",["中金香港资管账户"]],["000012",["国家队"]]]);
   toggleGroup("clearing",true);
   assert.equal(context.shareholderTypeBlocked("中央汇金"),true);
   assert.equal(context.shareholderTypeBlocked("香港中央结算有限公司"),true);
+  assert.equal(context.shareholderTypeBlocked("中金香港资管账户"),true);
   assert.equal(context.filteredShareholderRows(context.state.shareholderData).length,0);
   assert.ok(buttons.every(button=>!button.classList["has-shareholder-alert"]));
   toggleGroup("clearing",false);
-  assert.equal(context.filteredShareholderRows(context.state.shareholderData).map(p=>p.code).join(","),"000010,000011");
+  assert.equal(context.filteredShareholderRows(context.state.shareholderData).map(p=>p.code).join(","),"000011,000010");
   assert.equal(buttons[0].classList["has-shareholder-alert"],true);
   assert.equal(buttons[1].classList["has-shareholder-alert"],true);
   assert.equal(context.shareholderTypeBlocked("国家队"),true,"the merged option does not change securities-finance or other state-team preferences");
@@ -367,6 +369,7 @@ function anchor(code){return {dataset:{shareholderCode:code},isConnected:true,at
   assert.equal(context.shareholderTypeBlocked("中央汇金"),false,"later state-group changes do not reclassify Huijin into that group");
   delete context.state.shareholderBlockedTypes;
   assert.equal(context.shareholderTypeBlocked("中央汇金"),false,"an explicit merged-option choice survives reload independently of state-team settings");
+  assert.equal(context.shareholderTypeBlocked("中金香港资管账户"),false,"the CICC account choice also survives reload");
   const partialInput={getAttribute:()=>"mixed"};tooltip.querySelectorAll=()=>[partialInput];
   context.updateShareholderTooltip();
   assert.equal(partialInput.indeterminate,true,"partial preferences have a native mixed checkbox, not just text");

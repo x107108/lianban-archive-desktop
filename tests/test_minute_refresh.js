@@ -16,7 +16,7 @@ const context = vm.createContext({$, Date: {now: () => clock}, URLSearchParams,
     meta: {live: {enabled: true, today: day}, capabilities: {edit_tags: true}}},
   request: async (...args) => {requests.push(args); return responder(...args);},
   renderMinuteList() {$("minute-stock-list").scrollTop = 0;},
-  updateMinuteDateNavigation() {}, updateMinuteTimelineControls() {}, recordMinuteData: data => records.push(data.stock.code),
+  loadMinuteTagGroups() {}, updateMinuteDateNavigation() {}, updateMinuteTimelineControls() {}, recordMinuteData: data => records.push(data.stock.code),
   renderMinuteStockData: data => renders.push(data.stock.code), showMinutePoint: index => renders.push(index), showMinuteAuctionPoint() {},
   refreshMinuteComparisonChart() {}, loadMinuteTimeline: async () => renders.push("timeline")
 });

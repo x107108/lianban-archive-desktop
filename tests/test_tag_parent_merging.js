@@ -37,11 +37,11 @@ const pairHTML = context.renderIndustryColumns(pair);
 assert.deepEqual(headers(pairHTML), ['跨境 / 芯片 / 有色金属'], 'equal multi-stock parent cohorts also merge');
 assert.ok(pairHTML.includes('data-add-sector-tag="其他子标签"'), 'each distinct child branch is retained');
 const changed = [...rows, stock('000418', 1, ['黄金'])];
-assert.deepEqual(headers(context.renderIndustryColumns(changed)), ['有色金属', '跨境 / 芯片'], 'a different stock set splits the affected parent column');
+assert.deepEqual(headers(context.renderIndustryColumns(changed)), ['有色金属'], 'a shared parent carries the stock instead of redundant private parent and standalone columns');
 
 const leader = stock('000419', 3, ['黄金']);
-const daily = context.industryTagBoardCounts([...rows, leader]);
-assert.deepEqual(headers(context.renderIndustryColumns(rows, daily)), ['有色金属', '跨境 / 芯片'], 'first-board filtering cannot hide a different daily leader and falsely merge its parent');
+const daily = context.industryTagBoardCounts([...pair, leader]);
+assert.deepEqual(headers(context.renderIndustryColumns(pair, daily)), ['有色金属', '跨境 / 芯片'], 'first-board filtering cannot hide a different daily leader and falsely merge otherwise genuinely shared parents');
 context.state.meta.capabilities = {manage_tags: false, edit_tags: false};
 assert.ok(!context.renderIndustryColumns(rows, counts).includes('data-add-sector-tag'), 'read-only mode remains read-only');
 console.log('Parent-column merging: exact daily cohorts, all child paths/actions, standalone-first order, split-on-change, hidden leaders and read-only display passed.');

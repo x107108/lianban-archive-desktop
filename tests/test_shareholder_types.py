@@ -15,6 +15,9 @@ class ShareholderTypeTests(unittest.TestCase):
         self.assertEqual(classify_holder("中国证券金融股份有限公司", "国家队"), "国家队")
         self.assertEqual(classify_holder("华夏基金-中央汇金资产管理有限责任公司-某资产管理计划", "基金"), "基金")
         self.assertEqual(classify_holder("上海汇金投资管理有限公司", "其他"), "其他")
+        self.assertEqual(classify_holder("中国国际金融香港资产管理有限公司-ciccft3(r)", "其他"), "中金香港资管账户")
+        for name in ("中国国际金融香港资产管理有限公司", "中国国际金融香港资产管理有限公司-ciccft4(r)"):
+            self.assertEqual(classify_holder(name, "其他"), "其他")
 
     def test_huijin_refinement_is_shared_by_cached_lists_and_date_alerts(self):
         with closing(db.connect(":memory:")) as conn:
@@ -59,7 +62,8 @@ class ShareholderTypeTests(unittest.TestCase):
             day = "2026-11-02"
             db.save_day(conn, day, [{"code": code, "name": code, "boards": 1}
                         for code in ("000001", "000002")], "synthetic")
-            names = ("深圳市核子基因科技有限公司", "中国长城资产管理股份有限公司")
+            names = ("深圳市核子基因科技有限公司", "中国长城资产管理股份有限公司",
+                     "中国国际金融香港资产管理有限公司-ciccft3(r)")
             records = [{"code": code, "holder_key": name, "holder_name": name, "holder_type": "其他",
                         "report_date": "2026-09-30"} for code in ("000001", "000002") for name in names]
             sh.save_batch(conn, ["000001", "000002"], {"total": records, "float": records})
@@ -69,10 +73,11 @@ class ShareholderTypeTests(unittest.TestCase):
             before = [tuple(r) for r in conn.execute("SELECT * FROM stock_shareholders")]
             result = sh.stock_view(conn, "000001", day=day)
             for scope in ("total", "float"):
-                self.assertEqual({r["type"] for r in result["own_holders"][scope]}, {"企业股东", "AMC"})
-            self.assertEqual({r["type"] for r in result["rows"][0]["holders"]}, {"企业股东", "AMC"})
+                self.assertEqual({r["type"] for r in result["own_holders"][scope]}, {"企业股东", "AMC", "中金香港资管账户"})
+            self.assertEqual({r["type"] for r in result["rows"][0]["holders"]}, {"企业股东", "AMC", "中金香港资管账户"})
             self.assertEqual(sh.date_alerts(conn, day)["rows"], [
-                {"code": "000001", "types": ["AMC", "企业股东"]}, {"code": "000002", "types": ["AMC", "企业股东"]}])
+                {"code": "000001", "types": ["AMC", "中金香港资管账户", "企业股东"]},
+                {"code": "000002", "types": ["AMC", "中金香港资管账户", "企业股东"]}])
             self.assertEqual([tuple(r) for r in conn.execute("SELECT * FROM stock_shareholders")], before,
                              "old cached provider data and report periods are never overwritten by display refinements")
 

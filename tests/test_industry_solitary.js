@@ -1,7 +1,7 @@
 // A solitary stock's complete tag union must match only itself over the full day.
 const assert = require("node:assert/strict"), fs = require("node:fs"), vm = require("node:vm");
 const source = fs.readFileSync(require("node:path").join(__dirname, "../web/app.js"), "utf8");
-const context = vm.createContext({state: {grouping: "industry", meta: {latest_date: "2026-10-26", tag_order: ["主线", "第二主线", "唯高甲", "唯高乙"]}}});
+const context = vm.createContext({canManageTags: () => true, state: {grouping: "industry", meta: {latest_date: "2026-10-26", tag_order: ["主线", "第二主线", "唯高甲", "唯高乙"]}}});
 vm.runInContext(source.slice(source.indexOf("function escapeHTML"), source.indexOf("function debounce")), context);
 vm.runInContext(source.slice(source.indexOf("function stockTags"), source.indexOf("function renderTagEditor")), context);
 const stock = (code, boards, tags) => ({code, boards, tags, name: `样本${code}`, date: "2026-10-26", registered_province: "北京"});
@@ -17,8 +17,8 @@ const full = context.renderIndustryColumns(rows, counts);
 const columns = headers(full).slice(0, headers(full).length / 3);
 assert.deepEqual(headers(full), [6, 5, 1].flatMap(() => columns), "all heights use the same classification columns");
 assert.equal(columns.at(-1), "独苗", "first-board solitary remains rightmost");
-assert.ok(columns.some(label => label.split(" / ").includes("唯一甲") && label.split(" / ").includes("唯一乙"))
-  && columns.includes("独有丙"), "private labels of non-solitary stocks remain normal sector columns");
+assert.ok(["唯一甲", "唯一乙", "独有丙"].every(label => !columns.some(column => column.split(" / ").includes(label))),
+  "a shared sector replaces otherwise redundant private first-board columns");
 assert.equal(occurrences(cell(full, 1, "独苗"), "000005"), 1, "untagged stocks retain their existing solitary fallback");
 for (const code of ["000002", "000004"]) assert.equal(occurrences(cell(full, 1, "独苗"), code), 0,
   "a stock with any shared label must not also appear in solitary because of its private labels");
@@ -43,8 +43,8 @@ assert.equal(JSON.stringify(rows), before);
 assert.equal(JSON.stringify(counts), countsBefore);
 
 const sameMembers = [stock("000010", 1, ["共同", "私有甲"]), stock("000011", 1, ["共同", "私有乙"])];
-assert.deepEqual(headers(context.renderIndustryColumns(sameMembers)).sort(), ["共同", "私有甲", "私有乙"].sort(),
-  "even one shared tag keeps each stock in normal groups despite its other private tags");
+assert.deepEqual(headers(context.renderIndustryColumns(sameMembers)), ["共同"],
+  "shared first-board membership suppresses both stocks' private extra columns");
 const sameHeightPeers = [stock("000020", 5, ["私有先", "同高共享"]), stock("000021", 5, ["同高共享"])];
 assert.ok(!headers(context.renderIndustryColumns(sameHeightPeers)).includes("独苗"),
   "classification checks all original labels before higher-board display rules reduce them to one fallback");
@@ -66,8 +66,24 @@ assert.ok(!untagged.includes('data-add-sector-tag='), "stock-named fallback colu
 assert.deepEqual(headers(context.renderIndustryColumns([stock("000012", 1, [])])), ["独苗"], "the old unclassified category is renamed");
 const newlyShared = [stock("600980", 1, ["3D打印", "稀土永磁"]), stock("600981", 1, ["3D打印"])];
 const regrouped = headers(context.renderIndustryColumns(newlyShared));
-assert.ok(regrouped.includes("3D打印") && regrouped.includes("稀土永磁") && !regrouped.includes("独苗"),
-  "one newly shared tag moves the entire stock out of solitary, including its still-private other label");
+assert.deepEqual(regrouped, ["3D打印"],
+  "a newly shared tag moves the stock out of solitary without creating its still-private extra column");
+
+context.state.meta.tag_order = ['金融', 'AI应用', 'AI智能体', '数字货币', '银行'];
+context.state.meta.tag_hierarchy = [{name: '金融', parent: ''}, {name: '数字货币', parent: '金融'}, {name: '银行', parent: '金融'}];
+const chutian = {...stock('003040', 1, ['数字货币', 'AI智能体', 'AI应用']), name: '楚天龙'};
+const chutianRows = [chutian, stock('002197', 2, ['数字货币', 'AI应用']), stock('600567', 1, ['银行'])];
+const chutianCounts = context.industryTagBoardCounts(chutianRows), chutianBefore = JSON.stringify(chutianRows);
+const fullChutian = context.renderIndustryColumns(chutianRows, chutianCounts);
+assert.ok(!headers(fullChutian).includes('AI智能体'));
+assert.equal(occurrences(fullChutian, '003040'), 2, 'both genuinely shared sectors retain the first-board stock');
+assert.ok(fullChutian.includes('<span class="stock-tag">AI智能体</span>'), 'the private original tag stays on its stock card');
+const firstChutian = context.renderIndustryColumns(chutianRows.filter(row => row.boards === 1), chutianCounts);
+assert.equal(occurrences(firstChutian, '003040'), 2, 'filtering out the leader cannot turn a genuine daily sector into a private tag');
+assert.ok(!headers(firstChutian).includes('AI智能体'));
+const privateParent = [stock('000041', 1, ['银行', '共同']), stock('000042', 1, ['共同'])];
+assert.deepEqual(headers(context.renderIndustryColumns(privateParent)), ['共同'], 'a private parent sector also cannot bypass first-board deduplication');
+assert.equal(JSON.stringify(chutianRows), chutianBefore, 'deduplication never rewrites original stock tags or facts');
 context.state.grouping = "region";
 assert.deepEqual(headers(context.renderIndustryColumns(rows)), [6, 5, 1].map(() => "北京"), "region categories do not inherit solitary-tag rules");
 console.log("Solitary industry category: complete-stock tag union, any-shared-tag exclusion, pre-display classification, full-day filters, final placement and regrouping: passed.");

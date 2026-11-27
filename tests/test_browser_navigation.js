@@ -181,6 +181,12 @@ async function openStock(code) {
   readLocation("/?date=2026-10-21&view=intraday&minute_code=603278&minute_compare=300296,300296,bad,002929");
   await context.restoreFromURL();
   assert.deepEqual(Array.from(context.state.intradayRestored), ["300296", "002929"], "restore sanitizes peer codes and removes duplicates");
+  readLocation("/?date=2026-10-21&view=intraday&minute_code=603278&minute_compare=002929&minute_hidden=600185,600185,bad,002929,603278");
+  await context.restoreFromURL();
+  assert.deepEqual([...context.state.minuteHiddenCodes], ["600185"], "the restored hidden list is disjoint from visible stocks");
+  readLocation("/?date=2026-10-21&view=intraday&minute_hidden=600185");
+  await context.restoreFromURL();
+  assert.equal(context.state.minuteSelectionCleared, true, "a link with every stock hidden keeps the chart empty");
   context.state.tagManagerName = "机器人";
   context.setView("tags");
   const tagURL = entries[index];

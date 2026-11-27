@@ -7,11 +7,11 @@
   <meta name="description" content="按交易日期与股票检索 A 股历史涨停和连板记录。">
   <title>连板档案 · A 股复盘</title>
   <link rel="preload" href="/fonts/NotoSansSC-VF.woff2?v=20261017-1" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/styles.css?v=20261124-cycle-card-border">
+  <link rel="stylesheet" href="/styles.css?v=20261127-eight-sync">
   <link rel="stylesheet" href="/boardui-home.css?v=20261124-cycle-day-button">
   <link rel="stylesheet" href="/intraday-compare.css?v=20261124-query-standard">
   <script src="/ui-theme.js?v=20261124-query-standard" defer></script>
-  <script src="/app.js?v=20261124-cycle-day-button" defer></script>
+  <script src="/app.js?v=20261127-eight-sync" defer></script>
   <script src="/intraday-compare.js?v=20261124-query-standard" defer></script>
 </head>
 <body class="boardui-preview">
@@ -145,10 +145,10 @@
       <div class="minute-workspace">
         <section class="panel minute-stock-panel" aria-label="选择主板股票对比">
           <div class="minute-list-heading"><h2>主板股票 <span id="minute-stock-count" class="result-count">—</span></h2><button type="button" id="minute-compare-clear" class="minute-clear" disabled>清空</button></div>
-          <div class="minute-compare-filter"><label for="minute-compare-search" class="sr-only">搜索主板股票</label><input id="minute-compare-search" type="search" placeholder="名称 / 代码 / 首字母" autocomplete="off"><p>已选 <span id="minute-compare-count">0</span> 只 · 勾选多只对比 · 连板 / 首板 → 破板 → 主板</p></div>
+          <div class="minute-compare-filter"><label for="minute-compare-search" class="sr-only">搜索主板股票</label><input id="minute-compare-search" type="search" placeholder="名称 / 代码 / 首字母" autocomplete="off"><label for="minute-tag-group" class="sr-only">按标签批量勾选当日涨停股票</label><select id="minute-tag-group" disabled><option value="">按标签批量勾选</option></select><p aria-live="polite">对比列表 <span id="minute-compare-count">0</span> 只 · 显示 <span id="minute-compare-visible-count">0</span> 只</p></div>
           <div id="minute-stock-list" class="minute-stock-list" aria-live="polite" aria-busy="false"></div>
         </section>
-        <section class="panel minute-chart-panel" aria-label="分时图"><div class="minute-chart-heading"><div class="minute-stock-profile"><div class="minute-chart-identity"><h2 id="minute-stock-title">选择一只股票</h2><span id="minute-stock-blacklist" class="stock-blacklist-badge" hidden>黑名单</span><span id="minute-stock-boards" class="mini-tag" hidden></span></div><div class="minute-profile-meta"><span id="minute-stock-code" class="row-stock-code"></span><span id="minute-stock-initials" class="stock-initials" title="股票名称拼音首字母"></span><span id="minute-stock-region" class="stock-location" title="公司当前注册省份"></span></div><div id="minute-stock-tags" class="stock-tags" aria-label="行业标签"></div><div id="minute-stock-note" class="stock-note-row" aria-label="股票备注"></div><p id="minute-stock-detail" class="muted"></p></div><button type="button" id="minute-stock-history" class="button secondary small" hidden>查看连板历史</button></div>
+        <section class="panel minute-chart-panel" aria-label="分时图"><div class="minute-chart-heading"><div class="minute-stock-profile"><div class="minute-chart-identity"><h2 id="minute-stock-title">选择一只股票</h2><span id="minute-stock-blacklist" class="stock-blacklist-badge" hidden>黑名单</span><span id="minute-stock-boards" class="mini-tag" hidden></span></div><div class="minute-profile-meta"><span id="minute-stock-code" class="row-stock-code"></span><span id="minute-stock-initials" class="stock-initials" title="股票名称拼音首字母"></span><span id="minute-stock-region" class="stock-location" title="公司当前注册省份"></span></div><div id="minute-stock-tags" class="stock-tags" aria-label="行业标签"></div><div id="minute-stock-note" class="stock-note-row" aria-label="股票备注"></div></div><button type="button" id="minute-stock-history" class="button secondary small" hidden>查看连板历史</button></div>
           <div id="minute-quote" class="minute-quote" hidden></div>
           <div class="minute-chart-readout" tabindex="0" role="group" aria-label="分时图例与分钟读数，可横向滚动">
             <div class="minute-chart-legend"><span><i class="minute-price-key"></i>分时价格</span><label class="minute-average-toggle"><input type="checkbox" id="minute-show-average" autocomplete="off"><i class="minute-average-key" aria-hidden="true"></i>成交均价</label><span><i class="minute-volume-key"></i>分钟成交量</span></div>
